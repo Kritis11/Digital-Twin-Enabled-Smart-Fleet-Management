@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: fleet-twin-backend
+  config:
+    # Credentials come from the repo-root .env (run from backend/) or real env vars.
+    import: optional:file:../.env[.properties]
+  autoconfigure:
+    # No users yet: stops Boot generating and logging a default password.
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+fleet:
+  mqtt:
+    url: tcp://${MQTT_HOST:localhost}:${MQTT_PORT:1883}
+    username: ${MQTT_USERNAME}
+    password: ${MQTT_PASSWORD}
+    client-id: fleet-twin-backend
+    topic: fleet/+/telemetry
+  cors:
+    allowed-origins: http://localhost:4200
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
