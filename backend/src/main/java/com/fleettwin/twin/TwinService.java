@@ -92,6 +92,17 @@ public class TwinService {
         save(twin);
     }
 
+    /** Stores the ML service's latest verdict. The anomaly fields are null when no model is loaded. */
+    public synchronized void applyMl(long vehicleId, double healthScore, Boolean anomaly, Double score, List<String> reasons) {
+        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        twin.setHealthScore(healthScore);
+        twin.setAnomaly(anomaly);
+        twin.setAnomalyScore(score);
+        twin.setAnomalyReasons(reasons);
+        twin.setMlUpdatedAt(Instant.now());
+        save(twin);
+    }
+
     @Scheduled(fixedDelayString = "${fleet.twin.sweep-interval-ms}")
     public synchronized void markOffline() {
         Instant cutoff = Instant.now().minus(props.twin().offlineAfter());

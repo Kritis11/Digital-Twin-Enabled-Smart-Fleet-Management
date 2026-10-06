@@ -40,6 +40,13 @@ fleet:
     maintenance-summary-size: 5   # records included in GET /api/vehicles/{id}/twin
   alerts:
     max-results: 500
+  ml:
+    enabled: true
+    url: ${ML_SERVICE_URL:http://localhost:8000}
+    interval-ms: 10000            # how often every online vehicle is scored
+    timeout: 2s                   # connect and read timeout per call
+    window: 2m                    # telemetry sent to /anomaly (the model's longest feature window)
+    anomaly-critical-score: 0.9   # ML alerts at or above this are CRITICAL, below it WARNING
   telemetry:
     default-buckets: 300          # points returned when ?interval= is omitted
     max-buckets: 2000
