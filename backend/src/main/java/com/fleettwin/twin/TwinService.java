@@ -103,6 +103,36 @@ public class TwinService {
         save(twin);
     }
 
+    public synchronized void refreshOpenRecommendations(long vehicleId, long open) {
+        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        if (twin.getOpenRecommendations() == null || twin.getOpenRecommendations() != open) {
+            twin.setOpenRecommendations(open);
+            save(twin);
+        }
+    }
+
+    public synchronized void applyRul(long vehicleId, Map<String, VehicleTwin.Rul> rul) {
+        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        twin.getRul().putAll(rul);
+        save(twin);
+    }
+
+    /**
+     * A part was replaced or serviced: set its wear reading to new and drop its stale RUL, without
+     * waiting for the vehicle's next message to confirm it.
+     */
+    public synchronized void resetWear(long vehicleId, String component, String sensor, Double newValue) {
+        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        if (sensor != null && newValue != null) {
+            twin.getSensors().put(sensor, newValue);
+        }
+        twin.getRul().remove(component);
+        Map<String, Status> statuses = new LinkedHashMap<>();
+        Rule.evaluateAll(props.rules(), twin.getSensors()).forEach((name, finding) -> statuses.put(name, finding.status()));
+        twin.setComponents(statuses);
+        save(twin);
+    }
+
     @Scheduled(fixedDelayString = "${fleet.twin.sweep-interval-ms}")
     public synchronized void markOffline() {
         Instant cutoff = Instant.now().minus(props.twin().offlineAfter());

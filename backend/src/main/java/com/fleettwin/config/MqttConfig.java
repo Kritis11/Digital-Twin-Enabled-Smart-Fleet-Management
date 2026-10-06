@@ -9,6 +9,7 @@ import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
 import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
 import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
+import org.springframework.integration.mqtt.outbound.MqttPahoMessageHandler;
 import org.springframework.integration.mqtt.support.MqttHeaders;
 
 @Configuration
@@ -27,6 +28,18 @@ public class MqttConfig {
         DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
         factory.setConnectionOptions(options);
         return factory;
+    }
+
+    /** For commands to vehicles (fleet/{id}/maintenance). Its own client id: a broker allows one connection per id. */
+    @Bean
+    MqttPahoMessageHandler mqttOutbound(
+            MqttPahoClientFactory mqttClientFactory,
+            @Value("${fleet.mqtt.url}") String url,
+            @Value("${fleet.mqtt.client-id}") String clientId) {
+        MqttPahoMessageHandler handler = new MqttPahoMessageHandler(url, clientId + "-pub", mqttClientFactory);
+        handler.setAsync(true);
+        handler.setDefaultQos(1);
+        return handler;
     }
 
     @Bean

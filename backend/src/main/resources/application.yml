@@ -74,6 +74,32 @@ fleet:
     timeout: 2s                   # connect and read timeout per call
     window: 2m                    # telemetry sent to /anomaly (the model's longest feature window)
     anomaly-critical-score: 0.9   # ML alerts at or above this are CRITICAL, below it WARNING
+    rul-interval-ms: 60000        # how often remaining useful life is refreshed for every vehicle
+    rul-components: [brakes, battery, tyres, engine]
+  # Maintenance recommendations. Each rule that fires adds a sentence to the reason; the highest
+  # priority among them wins.
+  recommendations:
+    interval-ms: 900000           # recompute every 15 minutes
+    initial-delay-ms: 60000
+    anomaly-window: 7d            # how far back ML anomaly alerts count
+    dismiss-snooze: 7d            # a dismissed recommendation is not raised again for this long, unless it got more urgent
+    rules:
+      urgent-rul-days: 3          # predicted failure within this many days -> URGENT
+      high-rul-days: 10           # ... -> HIGH
+      medium-rul-days: 21         # ... -> MEDIUM
+      high-open-critical-alerts: 1   # this many unacknowledged CRITICAL alerts -> HIGH (any open WARNING -> MEDIUM)
+      medium-anomalies: 3         # this many ML anomaly alerts within anomaly-window -> MEDIUM
+      # also: current status CRITICAL -> URGENT, WARNING -> MEDIUM; service interval exceeded -> LOW
+    due-days: { urgent: 1, high: 7, medium: 21, low: 45 }   # recommended-by date, capped by the RUL lower bound
+    # action: recommended when the part is predicted to wear out (completing it resets the wear reading
+    # `sensor` to `new-value`). inspect-action: recommended when the only evidence is alerts, anomalies,
+    # status or an overdue service; completing it records the work but resets nothing.
+    components:
+      brakes:  { action: Replace brake pads, inspect-action: Inspect brakes,       sensor: brakePadWear,  new-value: 0,   service-interval-days: 60, service-interval-km: 15000 }
+      battery: { action: Replace battery,    inspect-action: Test battery,         sensor: batteryHealth, new-value: 100, service-interval-days: 90 }
+      tyres:   { action: Replace tyres,      inspect-action: Inspect tyres,        sensor: tyreTread,     new-value: 8,   service-interval-days: 90, service-interval-km: 25000 }
+      engine:  { action: Service engine,     inspect-action: Inspect engine,       sensor: engineHealth,  new-value: 100, service-interval-days: 60, service-interval-km: 20000 }
+      fuel:    { inspect-action: Inspect fuel system }
   telemetry:
     default-buckets: 300          # points returned when ?interval= is omitted
     max-buckets: 2000

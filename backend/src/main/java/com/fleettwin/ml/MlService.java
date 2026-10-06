@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
@@ -41,6 +42,11 @@ public class MlService {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     @JsonIgnoreProperties(ignoreUnknown = true)
     record HealthResult(double healthScore) {
+    }
+
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record RulResult(double rulDays, double lowerBound, double upperBound, double confidence) {
     }
 
     private final FleetProperties.Ml props;
@@ -76,6 +82,37 @@ public class MlService {
         } catch (Exception e) {
             // One warning per cycle, not per vehicle: if the service is down it is down for all of them.
             log.warn("ML service unavailable, keeping rule-based statuses only: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Refreshes remaining useful life for every vehicle, online or not: wear does not stop mattering
+     * when a vehicle is parked. The ML service reads the history it needs from TimescaleDB itself.
+     */
+    @Scheduled(fixedDelayString = "${fleet.ml.rul-interval-ms}")
+    public void predictRul() {
+        if (!props.enabled()) {
+            return;
+        }
+        try {
+            for (VehicleTwin twin : twins.all()) {
+                Map<String, VehicleTwin.Rul> rul = new LinkedHashMap<>();
+                for (String component : props.rulComponents()) {
+                    try {
+                        RulResult r = client.post().uri("/rul")
+                                .body(Map.of("vehicle_id", twin.getId(), "component", component))
+                                .retrieve().body(RulResult.class);
+                        rul.put(component, new VehicleTwin.Rul(r.rulDays(), r.lowerBound(), r.upperBound(), r.confidence(), Instant.now()));
+                    } catch (HttpClientErrorException.NotFound | HttpServerErrorException.ServiceUnavailable e) {
+                        // no wear history for this vehicle yet, or no model trained for this part: nothing to show
+                    }
+                }
+                if (!rul.isEmpty()) {
+                    twins.applyRul(twin.getId(), rul);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("ML service unavailable, remaining useful life not refreshed: {}", e.getMessage());
         }
     }
 

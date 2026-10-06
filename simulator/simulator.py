@@ -214,9 +214,9 @@ class Vehicle:
 
         def reading(component: str, digits: int) -> float:
             c = COMPONENTS[component]
-            low, high = sorted((c["new"], c["fail"]))
-            # sensor noise, clamped to the physical range (a failed part still reads at its limit)
-            return round(min(high + 5, max(low - 5, self.wear[component] + rng.gauss(0, c["noise"]))), digits)
+            value = self.wear[component] + rng.gauss(0, c["noise"])
+            # sensor noise must not make a new part read better than new (e.g. negative pad wear)
+            return round(max(c["new"], value) if c["new"] < c["fail"] else min(c["new"], value), digits)
 
         payload = {
             "vehicle_id": self.id,

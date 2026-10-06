@@ -20,6 +20,10 @@ public class VehicleTwin {
 
     public enum State { MOVING, IDLE, OFFLINE }
 
+    /** Predicted remaining useful life in days, with an 80% interval. */
+    public record Rul(double days, double lower, double upper, double confidence, Instant updatedAt) {
+    }
+
     // identity
     private Long id;
     private String registration;
@@ -48,6 +52,12 @@ public class VehicleTwin {
     private Double anomalyScore;
     private List<String> anomalyReasons;
     private Instant mlUpdatedAt;
+
+    /** brakes, battery, tyres, engine; a part is absent until the ML service has predicted it. */
+    private Map<String, Rul> rul = new LinkedHashMap<>();
+
+    /** Recommendations with status OPEN, as of the last recommendation run or status change. */
+    private Long openRecommendations;
 
     // maintenance summary; only filled in by GET /api/vehicles/{id}/twin, never stored in Redis
     private List<MaintenanceRecord> recentMaintenance;
