@@ -1,43 +1,119 @@
-import { Component, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { Component, DestroyRef, ElementRef, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import * as L from 'leaflet';
 import { environment } from '../../environments/environment';
-
-type BackendStatus = 'checking' | 'connected' | 'unreachable';
+import { FleetService, VehicleTwin, ago, healthLevel } from '../fleet.service';
 
 @Component({
   selector: 'app-fleet-overview',
+  imports: [RouterLink, DecimalPipe],
   template: `
-    <main>
-      <h1>Fleet Overview</h1>
-      @switch (status()) {
-        @case ('connected') {
-          <p class="status ok" role="status">Backend connected</p>
-        }
-        @case ('unreachable') {
-          <p class="status down" role="status">Backend unreachable</p>
-        }
-        @default {
-          <p class="status" role="status">Checking backend…</p>
-        }
+    <h1>Fleet Overview</h1>
+
+    <section class="cards" aria-label="Fleet summary">
+      <div class="card"><span>Total vehicles</span><strong>{{ fleet.twins().length }}</strong></div>
+      <div class="card"><span>Moving</span><strong>{{ counts().MOVING }}</strong></div>
+      <div class="card"><span>Idle</span><strong>{{ counts().IDLE }}</strong></div>
+      <div class="card"><span>Offline</span><strong>{{ counts().OFFLINE }}</strong></div>
+      <a class="card" routerLink="/alerts" [class.critical]="fleet.openAlerts().length">
+        <span>Open alerts</span><strong>{{ fleet.openAlerts().length }}</strong>
+      </a>
+    </section>
+
+    <div class="panel map" #map aria-label="Fleet map"></div>
+
+    <section class="panel">
+      <h2>Vehicles</h2>
+      @if (fleet.loading()) {
+        <p class="muted">Loading fleet…</p>
+      } @else if (!fleet.twins().length) {
+        <p class="muted">No vehicles.</p>
+      } @else {
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>Vehicle</th><th>State</th><th>Health</th><th>Last seen</th></tr>
+            </thead>
+            <tbody>
+              @for (twin of fleet.twins(); track twin.id) {
+                <tr>
+                  <td>
+                    <a [routerLink]="['/vehicles', twin.id]">{{ twin.registration }}</a>
+                    <span class="muted"> {{ twin.make }} {{ twin.model }}</span>
+                  </td>
+                  <td><span class="pill" [class]="twin.state.toLowerCase()">{{ twin.state }}</span></td>
+                  <td>
+                    <span class="dot" [class]="level(twin)"></span>
+                    {{ twin.healthScore == null ? '–' : (twin.healthScore | number: '1.0-0') }}
+                  </td>
+                  <td>{{ ago(twin.lastSeen, fleet.now()) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
       }
-    </main>
-  `,
-  styles: `
-    main { font-family: system-ui, sans-serif; margin: 2rem; }
-    .status { font-weight: 600; }
-    .ok { color: #1a7f37; }
-    .down { color: #b42318; }
+    </section>
   `,
 })
 export class FleetOverview {
-  protected readonly status = signal<BackendStatus>('checking');
+  protected readonly fleet = inject(FleetService);
+  protected readonly level = healthLevel;
+  protected readonly ago = ago;
+  protected readonly counts = computed(() => {
+    const counts = { MOVING: 0, IDLE: 0, OFFLINE: 0 };
+    for (const twin of this.fleet.twins()) counts[twin.state]++;
+    return counts;
+  });
+
+  private readonly router = inject(Router);
+  private readonly mapEl = viewChild.required<ElementRef<HTMLElement>>('map');
+  private readonly map = signal<L.Map | null>(null);
+  private readonly markers = new Map<number, L.Marker>();
+  private fitted = false;
 
   constructor() {
-    inject(HttpClient)
-      .get<{ status: string }>(`${environment.apiBaseUrl}/actuator/health`)
-      .subscribe({
-        next: (health) => this.status.set(health.status === 'UP' ? 'connected' : 'unreachable'),
-        error: () => this.status.set('unreachable'),
+    afterNextRender(() => {
+      const map = L.map(this.mapEl().nativeElement).setView(environment.map.center, environment.map.zoom);
+      L.tileLayer(environment.map.tileUrl, { attribution: environment.map.attribution }).addTo(map);
+      this.map.set(map);
+    });
+    effect(() => {
+      const map = this.map();
+      if (map) this.drawMarkers(map, this.fleet.twins());
+    });
+    inject(DestroyRef).onDestroy(() => this.map()?.remove());
+  }
+
+  private drawMarkers(map: L.Map, twins: VehicleTwin[]): void {
+    const located = twins.filter((t) => t.lat != null && t.lng != null);
+    for (const twin of located) {
+      const position: L.LatLngTuple = [twin.lat!, twin.lng!];
+      // An arrow pointing along the heading, coloured by health and dimmed when offline.
+      const icon = L.divIcon({
+        className: '',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        html: `<div class="vehicle-marker ${healthLevel(twin)} ${twin.state.toLowerCase()}"
+                    style="transform: rotate(${twin.heading ?? 0}deg)">▲</div>`,
       });
+      // textContent, not an HTML string: registration comes from the database.
+      const label = document.createElement('span');
+      label.textContent = `${twin.registration} · ${twin.state} · health ${twin.healthScore?.toFixed(0) ?? '–'}`;
+
+      let marker = this.markers.get(twin.id);
+      if (!marker) {
+        marker = L.marker(position, { icon, title: twin.registration }).addTo(map).bindTooltip(label);
+        marker.on('click', () => this.router.navigate(['/vehicles', twin.id]));
+        this.markers.set(twin.id, marker);
+      } else {
+        marker.setLatLng(position).setIcon(icon).setTooltipContent(label);
+      }
+    }
+    if (!this.fitted && located.length) {
+      map.fitBounds(L.latLngBounds(located.map((t) => [t.lat!, t.lng!])), { padding: [40, 40] });
+      this.fitted = true;
+    }
   }
 }
