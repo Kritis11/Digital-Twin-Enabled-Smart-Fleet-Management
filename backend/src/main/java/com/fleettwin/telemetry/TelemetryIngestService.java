@@ -4,6 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fleettwin.twin.TwinService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,13 +18,22 @@ public class TelemetryIngestService {
 
     private final TelemetryRepository repository;
     private final ObjectMapper objectMapper;
+    private final TwinService twinService;
 
     /** Persists one MQTT message. A bad message is logged and dropped so it can't stall the subscriber. */
     public void ingest(String topic, String json) {
+        Telemetry telemetry;
         try {
-            repository.save(parse(topic, json, objectMapper));
+            telemetry = repository.save(parse(topic, json, objectMapper));
         } catch (Exception e) {
             log.warn("Dropped telemetry on topic {}: {}", topic, e.getMessage());
+            return;
+        }
+        // The row is stored; a twin failure (e.g. Redis down) must not look like lost telemetry.
+        try {
+            twinService.onTelemetry(telemetry);
+        } catch (Exception e) {
+            log.warn("Twin update failed for vehicle {}: {}", telemetry.getVehicleId(), e.toString());
         }
     }
 

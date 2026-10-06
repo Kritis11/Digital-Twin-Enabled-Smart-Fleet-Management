@@ -1,7 +1,9 @@
 package com.fleettwin.telemetry;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -46,4 +48,22 @@ public class Telemetry {
     private List<String> dtcCodes = List.of();
 
     private String injectedFault;
+
+    /** Every non-null numeric reading, keyed by field name. */
+    public Map<String, Double> sensorValues() {
+        Map<String, Double> m = new LinkedHashMap<>();
+        m.put("speed", speed);
+        m.put("engineTemp", engineTemp);
+        m.put("rpm", rpm);
+        m.put("batteryVoltage", batteryVoltage);
+        m.put("fuelLevel", fuelLevel);
+        m.put("vibration", vibration);
+        m.put("tyrePressureFl", tyrePressureFl);
+        m.put("tyrePressureFr", tyrePressureFr);
+        m.put("tyrePressureRl", tyrePressureRl);
+        m.put("tyrePressureRr", tyrePressureRr);
+        m.put("brakePadWear", brakePadWear);
+        m.values().removeIf(v -> v == null);
+        return m;
+    }
 }

@@ -33,6 +33,30 @@ fleet:
     topic: fleet/+/telemetry
   cors:
     allowed-origins: http://localhost:4200
+  twin:
+    offline-after: 30s            # no telemetry for this long -> OFFLINE
+    moving-speed-kmh: 2           # above this -> MOVING, otherwise IDLE
+    sweep-interval-ms: 5000       # how often the offline check runs
+    maintenance-summary-size: 5   # records included in GET /api/vehicles/{id}/twin
+  alerts:
+    max-results: 500
+  telemetry:
+    default-buckets: 300          # points returned when ?interval= is omitted
+    max-buckets: 2000
+  # Component status rules. A component's status is the worst of its rules.
+  # Limits: warning-above, critical-above, warning-below, critical-below (all optional).
+  # Metrics: speed, engineTemp, rpm, batteryVoltage, fuelLevel, vibration, brakePadWear,
+  #          tyrePressureFl, tyrePressureFr, tyrePressureRl, tyrePressureRr.
+  rules:
+    - { component: engine,  metric: engineTemp,     warning-above: 105,  critical-above: 115 }
+    - { component: engine,  metric: vibration,      warning-above: 1.5,  critical-above: 2.5 }
+    - { component: battery, metric: batteryVoltage, warning-below: 12.4, critical-below: 11.8 }
+    - { component: brakes,  metric: brakePadWear,   warning-above: 70,   critical-above: 85 }
+    - { component: tyre_fl, metric: tyrePressureFl, warning-below: 28,   critical-below: 24 }
+    - { component: tyre_fr, metric: tyrePressureFr, warning-below: 28,   critical-below: 24 }
+    - { component: tyre_rl, metric: tyrePressureRl, warning-below: 28,   critical-below: 24 }
+    - { component: tyre_rr, metric: tyrePressureRr, warning-below: 28,   critical-below: 24 }
+    - { component: fuel,    metric: fuelLevel,      warning-below: 15,   critical-below: 7 }
 
 springdoc:
   swagger-ui:
