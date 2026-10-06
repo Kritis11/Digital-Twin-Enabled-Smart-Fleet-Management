@@ -78,6 +78,37 @@ public class DrivingRepository {
         return rows[0];
     }
 
+    /**
+     * km per litre over the vehicle's previous `trips` trips of at least minKm, or null if there are fewer
+     * than `minTrips` of them.
+     */
+    public Double baselineKmPerLitre(long vehicleId, Instant before, double minKm, int trips, int minTrips) {
+        return jdbc.queryForObject("""
+                SELECT CASE WHEN count(*) >= ? THEN sum(distance_km) / sum(fuel_used_l) END FROM (
+                    SELECT distance_km, fuel_used_l FROM trips
+                    WHERE vehicle_id = ? AND started_at < ? AND distance_km >= ? AND fuel_used_l > 0
+                    ORDER BY started_at DESC LIMIT ?) t""",
+                Double.class, minTrips, vehicleId, Timestamp.from(before), minKm, trips);
+    }
+
+    /** Correlation between driver score and km per litre across vehicle-days; null with too little data. */
+    public Double scoreEfficiencyCorrelation(Instant since, double minScoreKm) {
+        return jdbc.queryForObject("""
+                SELECT corr(score, efficiency) FROM (
+                    SELECT greatest(0, 100 - sum(penalty_points) * 100 / greatest(sum(distance_km), ?)) AS score,
+                           sum(distance_km) / nullif(sum(fuel_used_l), 0) AS efficiency
+                    FROM trips WHERE started_at >= ?
+                    GROUP BY vehicle_id, date_trunc('day', started_at AT TIME ZONE 'UTC')) d""",
+                Double.class, minScoreKm, Timestamp.from(since));
+    }
+
+    public List<EventRow> fuelEvents(long vehicleId, Instant since, int limit) {
+        return jdbc.query("""
+                SELECT * FROM driving_events WHERE vehicle_id = ? AND ts >= ? AND type IN ('FUEL_DROP', 'LOW_EFFICIENCY')
+                ORDER BY ts DESC LIMIT ?""",
+                new DataClassRowMapper<>(EventRow.class), vehicleId, Timestamp.from(since), limit);
+    }
+
     public List<EventRow> events(long vehicleId, Instant since, String type, int limit) {
         return jdbc.query("""
                 SELECT * FROM driving_events WHERE vehicle_id = ? AND ts >= ? AND (?::text IS NULL OR type = ?)

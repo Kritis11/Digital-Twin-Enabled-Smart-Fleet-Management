@@ -142,10 +142,10 @@ class Vehicle:
             self.fault = rng.choice(FAULTS)
             self.fault_ticks = rng.randint(10, 30)
             self.fault_tyre = rng.choice(TYRES)
-            if self.fault == "fuel_theft":
-                self.speed = 0.0  # parked when it happens
-                self.fuel = max(6.0, self.fuel - rng.uniform(8, 15))
         fault = self.fault
+        # Fuel goes missing part-way through the stop, once the vehicle has been standing for a while.
+        if fault == "fuel_theft" and self.fault_ticks == 5:
+            self.fuel = max(6.0, self.fuel - rng.uniform(8, 15))
 
         # Speed drifts towards a target that changes now and then (traffic, stops).
         if rng.random() < 1 - 0.95 ** ticks:

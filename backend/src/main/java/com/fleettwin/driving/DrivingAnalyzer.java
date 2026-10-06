@@ -79,11 +79,13 @@ public class DrivingAnalyzer {
             if (dt <= 0) {
                 return out; // late or duplicate reading
             }
-            if (dt > cfg.tripGap().toSeconds()) {
+            boolean gap = dt > cfg.tripGap().toSeconds();
+            boolean fuelDropped = fuelDrop(r, gap, out);
+            if (gap) {
                 closeTrip(prev, out);
                 prevHeading = null;
             } else if (tripStart != null) {
-                drive(r, dt, out);
+                drive(r, dt, fuelDropped, out);
             }
         }
         if (tripStart == null && moving(r)) {
@@ -102,12 +104,31 @@ public class DrivingAnalyzer {
         return out;
     }
 
-    private void drive(Reading r, double dt, Output out) {
+    /**
+     * Fuel that disappears while the vehicle is parked (standing still on both readings, or across a gap
+     * in telemetry) was not burned by driving: possible theft or a leak. Not a driver event, so it does
+     * not count towards the trip's events or score.
+     */
+    private boolean fuelDrop(Reading r, boolean gap, Output out) {
+        if (r.fuelLevel() == null || prev.fuelLevel() == null || !(gap || (!moving(prev) && !moving(r)))) {
+            return false;
+        }
+        double drop = prev.fuelLevel() - r.fuelLevel();
+        if (drop < fuel.dropPercent()) {
+            return false;
+        }
+        double litres = drop / 100.0 * fuel.tankLitres();
+        out.events().add(new Event("FUEL_DROP", ratioSeverity(drop / fuel.dropPercent(), 2, 4), r.ts(), r.lat(), r.lng(), litres,
+                String.format(Locale.ROOT, "Fuel fell by %.0f l (%.1f%% of the tank) while parked: possible theft or leak", litres, drop)));
+        return true;
+    }
+
+    private void drive(Reading r, double dt, boolean fuelDropped, Output out) {
         Double odo = r.odometerKm() != null && prev.odometerKm() != null ? r.odometerKm() - prev.odometerKm() : null;
         double km = odo != null && odo >= 0 ? odo : haversineKm(prev, r);
         distanceKm += km;
         maxSpeed = Math.max(maxSpeed, r.speed());
-        if (r.fuelLevel() != null && prev.fuelLevel() != null && prev.fuelLevel() > r.fuelLevel()) {
+        if (!fuelDropped && r.fuelLevel() != null && prev.fuelLevel() != null && prev.fuelLevel() > r.fuelLevel()) {
             fuelUsedPercent += prev.fuelLevel() - r.fuelLevel(); // a rise is a refuel, not negative use
         }
 

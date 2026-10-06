@@ -25,6 +25,7 @@ public record FleetProperties(Twin twin, List<Rule> rules, Ml ml, Driving drivin
         }
     }
 
-    public record Fuel(double tankLitres) {
+    public record Fuel(double tankLitres, double idleLitresPerHour, double dropPercent, double lowEfficiencyFraction,
+                       double minTripKm, int baselineTrips, int minBaselineTrips) {
     }
 }

@@ -1,15 +1,23 @@
 package com.fleettwin.driving;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
+import com.fleettwin.alert.Alert;
+import com.fleettwin.alert.AlertService;
 import com.fleettwin.config.FleetProperties;
+import com.fleettwin.driving.DrivingAnalyzer.Event;
 import com.fleettwin.driving.DrivingAnalyzer.Output;
 import com.fleettwin.driving.DrivingAnalyzer.Reading;
 import com.fleettwin.driving.DrivingAnalyzer.Trip;
 import com.fleettwin.telemetry.Telemetry;
+import com.fleettwin.twin.Status;
 import com.fleettwin.vehicle.Vehicle;
 import com.fleettwin.vehicle.VehicleRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,13 +41,14 @@ public class DrivingService {
     private final FleetProperties props;
     private final DrivingRepository repository;
     private final VehicleRepository vehicles;
+    private final AlertService alerts;
     private final Map<Long, DrivingAnalyzer> analyzers = new HashMap<>();
 
     /** Called for every stored telemetry row. */
     public synchronized void onTelemetry(Telemetry t) {
         Reading reading = new Reading(t.getTs(), t.getLat(), t.getLng(), t.getSpeed(), t.getFuelLevel(),
                 t.getAccelMin(), t.getAccelMax(), t.getOdometerKm());
-        store(t.getVehicleId(), analyzers.computeIfAbsent(t.getVehicleId(), id -> newAnalyzer()).accept(reading));
+        store(t.getVehicleId(), analyzers.computeIfAbsent(t.getVehicleId(), id -> newAnalyzer()).accept(reading), true);
     }
 
     /** A vehicle that went quiet never sends the reading that would end its trip, so end it here. */
@@ -48,7 +57,7 @@ public class DrivingService {
         Instant cutoff = Instant.now().minus(props.driving().tripGap());
         analyzers.forEach((vehicleId, analyzer) -> {
             if (analyzer.lastSeen() != null && analyzer.lastSeen().isBefore(cutoff)) {
-                store(vehicleId, analyzer.flush());
+                store(vehicleId, analyzer.flush(), true);
             }
         });
     }
@@ -63,11 +72,11 @@ public class DrivingService {
         for (Vehicle vehicle : vehicles.findAll()) {
             DrivingAnalyzer analyzer = newAnalyzer();
             rows += repository.replayTelemetry(vehicle.getId(), from, to, reading -> {
-                int[] stored = store(vehicle.getId(), analyzer.accept(reading));
+                int[] stored = store(vehicle.getId(), analyzer.accept(reading), false);
                 counts[0] += stored[0];
                 counts[1] += stored[1];
             });
-            int[] stored = store(vehicle.getId(), analyzer.flush());
+            int[] stored = store(vehicle.getId(), analyzer.flush(), false);
             counts[0] += stored[0];
             counts[1] += stored[1];
         }
@@ -81,15 +90,44 @@ public class DrivingService {
         return result;
     }
 
-    /** Returns {events stored, trips stored}. */
-    private int[] store(long vehicleId, Output output) {
-        if (!output.events().isEmpty()) {
-            repository.insertEvents(vehicleId, output.events());
-        }
+    /** Returns {events stored, trips stored}. Alerts are only raised for live data, not for replayed history. */
+    private int[] store(long vehicleId, Output output, boolean live) {
+        List<Event> events = new ArrayList<>(output.events());
         for (Trip trip : output.trips()) {
+            lowEfficiency(vehicleId, trip).ifPresent(events::add);
             repository.insertTrip(vehicleId, trip);
         }
-        return new int[] {output.events().size(), output.trips().size()};
+        if (!events.isEmpty()) {
+            repository.insertEvents(vehicleId, events);
+        }
+        if (live) {
+            for (Event e : events) {
+                if (e.type().equals("FUEL_DROP") || e.type().equals("LOW_EFFICIENCY")) {
+                    alerts.raise(vehicleId, "fuel", e.severity().equals("LOW") ? Status.WARNING : Status.CRITICAL,
+                            e.detail(), Alert.Source.RULE);
+                }
+            }
+        }
+        return new int[] {events.size(), output.trips().size()};
+    }
+
+    /** A trip that got far fewer km per litre than this vehicle's own recent trips. */
+    private Optional<Event> lowEfficiency(long vehicleId, Trip trip) {
+        FleetProperties.Fuel fuel = props.fuel();
+        if (trip.distanceKm() < fuel.minTripKm() || trip.fuelUsedL() <= 0) {
+            return Optional.empty();
+        }
+        Double baseline = repository.baselineKmPerLitre(vehicleId, trip.startedAt(), fuel.minTripKm(),
+                fuel.baselineTrips(), fuel.minBaselineTrips());
+        double efficiency = trip.distanceKm() / trip.fuelUsedL();
+        if (baseline == null || efficiency >= baseline * (1 - fuel.lowEfficiencyFraction())) {
+            return Optional.empty();
+        }
+        double below = 1 - efficiency / baseline;
+        return Optional.of(new Event("LOW_EFFICIENCY", below >= 2 * fuel.lowEfficiencyFraction() ? "MEDIUM" : "LOW",
+                trip.endedAt(), trip.endLat(), trip.endLng(), efficiency,
+                String.format(Locale.ROOT, "Trip got %.2f km/l, %.0f%% below this vehicle's baseline of %.2f km/l",
+                        efficiency, below * 100, baseline)));
     }
 
     private DrivingAnalyzer newAnalyzer() {

@@ -61,6 +61,12 @@ fleet:
     max-results: 500              # cap on events / trips returned by one request
   fuel:
     tank-litres: 300              # fuel_level is a percentage of this
+    idle-litres-per-hour: 3.2     # used to turn idling time into litres
+    drop-percent: 3               # a fall of this much of the tank between two readings while parked is a FUEL_DROP
+    low-efficiency-fraction: 0.25 # a trip this far below the vehicle's own baseline km/l is LOW_EFFICIENCY
+    min-trip-km: 5                # shorter trips are too noisy to judge efficiency on
+    baseline-trips: 20            # the baseline is the vehicle's previous this-many trips ...
+    min-baseline-trips: 5         # ... and needs at least this many before anything is flagged
   ml:
     enabled: true
     url: ${ML_SERVICE_URL:http://localhost:8000}

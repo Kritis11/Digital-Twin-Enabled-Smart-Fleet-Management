@@ -25,7 +25,7 @@ class DrivingAnalyzerTest {
             Map.of("harsh-braking", 1.5, "rapid-acceleration", 1.0, "speeding", 1.5, "sharp-cornering", 1.0,
                     "excessive-idling", 0.5),
             new Driving.SeverityMultipliers(1.5, 2.0), 500);
-    private final DrivingAnalyzer analyzer = new DrivingAnalyzer(cfg, new Fuel(300), 2);
+    private final DrivingAnalyzer analyzer = new DrivingAnalyzer(cfg, new Fuel(300, 3.2, 3, 0.25, 5, 20, 5), 2);
     private final List<Event> events = new ArrayList<>();
     private final List<Trip> trips = new ArrayList<>();
     private double odometer = 1000;
@@ -143,6 +143,25 @@ class DrivingAnalyzerTest {
         assertEquals(1, trips.size());
         assertEquals(T0.plusSeconds(20), trips.get(0).endedAt());
         assertEquals(0, trips.get(0).idleS(), "the parked time is not part of the trip");
+    }
+
+    @Test
+    void fuelLostWhileParkedIsFlaggedButFuelBurnedWhileDrivingIsNot() {
+        at(0, 60, 0.0, 77.0, 80);
+        at(10, 60, 0.0, 77.0, 70);    // a 10% fall while moving: bad data perhaps, but not a parked drop
+        at(20, 0, 0.0, 77.0, 70);
+        at(30, 0, 0.0, 77.0, 58);     // 12% of 300 l gone while standing
+        at(40, 60, 0.0, 77.0, 58);
+        assertEquals(List.of("FUEL_DROP"), events.stream().map(Event::type).toList());
+        assertEquals(36.0, events.get(0).value(), 1e-9);
+        assertEquals("HIGH", events.get(0).severity()); // four times the 3% threshold
+
+        at(40 + 3600, 60, 0.0, 77.0, 52);   // overnight gap with 6% missing
+        assertEquals(2, events.size());
+        assertEquals("MEDIUM", events.get(1).severity());
+        // the trip that just ended burned the 10%, not the stolen 12%
+        assertEquals(30.0, trips.get(0).fuelUsedL(), 1e-9);
+        assertEquals(0, trips.get(0).eventsCount(), "fuel drops are not driving events");
     }
 
     @Test
