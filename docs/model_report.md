@@ -1,57 +1,57 @@
 # Anomaly model report
 
-Generated 2026-10-06 15:15 UTC by `ml-service/training/train.py`. Model version `20261006T151526Z`.
+Generated 2026-10-06 15:47 UTC by `ml-service/training/train.py`. Model version `20261006T154759Z`.
 
 ## Data
 
-- 2190 telemetry rows over 15 minutes from the simulator; 645 rows (29%) carry an `injected_fault` label.
-- 34 fault episodes: low_battery 14, low_tyre_pressure 4, overheating 11, vibration_spike 5.
-- Time-based split at 2026-10-06 15:12:15 UTC: the first 1751 rows train (31% faulty), the last 439 rows test (24% faulty). No shuffling.
+- 7080 telemetry rows over 47 minutes from the simulator; 2049 rows (29%) carry an `injected_fault` label.
+- 104 fault episodes: low_battery 28, low_tyre_pressure 24, overheating 32, vibration_spike 20.
+- Time-based split at 2026-10-06 15:38:29 UTC: the first 5660 rows train (30% faulty), the last 1420 rows test (25% faulty). No shuffling.
 - 88 features: latest value plus mean, std, min, max and rate of change over 30 s and 120 s windows, per vehicle, for `engine_temp`, `vibration`, `rpm`, `battery_voltage`, `tyre_pressure_fl`, `tyre_pressure_fr`, `tyre_pressure_rl`, `tyre_pressure_rr`.
 
 ## Results on the test split
 
 | Model | Precision | Recall | F1 |
 |---|---|---|---|
-| Isolation Forest (unsupervised) | 0.960 | 0.226 | 0.366 |
-| XGBoost (supervised) | 0.946 | 0.991 | 0.968 |
+| Isolation Forest (unsupervised) | 0.779 | 0.151 | 0.252 |
+| XGBoost (supervised) | 0.988 | 0.969 | 0.978 |
 
 ### Isolation Forest (unsupervised)
 
 | | Predicted healthy | Predicted anomaly |
 |---|---|---|
-| **Actually healthy** | 332 | 1 |
-| **Actually faulty** | 82 | 24 |
+| **Actually healthy** | 1053 | 15 |
+| **Actually faulty** | 299 | 53 |
 
-Recall by fault type: low_battery 0.27, overheating 0.00, vibration_spike 0.32.
+Recall by fault type: low_battery 0.00, low_tyre_pressure 0.53, overheating 0.00, vibration_spike 0.01.
 
 ### XGBoost (supervised)
 
 | | Predicted healthy | Predicted anomaly |
 |---|---|---|
-| **Actually healthy** | 327 | 6 |
-| **Actually faulty** | 1 | 105 |
+| **Actually healthy** | 1064 | 4 |
+| **Actually faulty** | 11 | 341 |
 
-Recall by fault type: low_battery 1.00, overheating 0.95, vibration_spike 1.00.
+Recall by fault type: low_battery 1.00, low_tyre_pressure 1.00, overheating 0.92, vibration_spike 1.00.
 
 ## Top XGBoost features (share of total gain)
 
 | Feature | Share |
 |---|---|
-| `tyre_pressure_rr_roc_30s` | 20.4% |
-| `tyre_pressure_rr_roc_120s` | 12.8% |
-| `battery_voltage_roc_120s` | 7.2% |
-| `tyre_pressure_rl_last` | 6.3% |
-| `battery_voltage_last` | 5.5% |
-| `vibration_last` | 5.4% |
-| `engine_temp_last` | 4.6% |
-| `tyre_pressure_rr_last` | 3.7% |
-| `battery_voltage_roc_30s` | 2.9% |
-| `engine_temp_mean_120s` | 2.9% |
+| `battery_voltage_roc_30s` | 13.1% |
+| `vibration_last` | 9.6% |
+| `battery_voltage_last` | 7.2% |
+| `engine_temp_roc_30s` | 6.0% |
+| `battery_voltage_max_30s` | 5.9% |
+| `battery_voltage_roc_120s` | 5.7% |
+| `tyre_pressure_rr_last` | 5.3% |
+| `tyre_pressure_fr_roc_120s` | 5.3% |
+| `tyre_pressure_rr_roc_120s` | 4.2% |
+| `engine_temp_last` | 3.8% |
 
 ## Selected model
 
-**XGBoost (supervised)**, chosen by F1. Uploaded to MinIO as `models/anomaly/20261006T151526Z/`.
+**XGBoost (supervised)**, chosen by F1. Uploaded to MinIO as `models/anomaly/20261006T154759Z/`.
 
 ## Caveats
 
