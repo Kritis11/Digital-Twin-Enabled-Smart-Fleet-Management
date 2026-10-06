@@ -42,6 +42,13 @@ public class Telemetry {
     private Double tyrePressureRl;
     private Double tyrePressureRr;
     private Double brakePadWear;
+    private Double batteryHealth;
+    private Double tyreTread;
+    private Double engineHealth;
+    private Double odometerKm;
+    private Double engineHours;
+    private Double accelMin;
+    private Double accelMax;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(columnDefinition = "text[]")
@@ -63,6 +70,13 @@ public class Telemetry {
         m.put("tyrePressureRl", tyrePressureRl);
         m.put("tyrePressureRr", tyrePressureRr);
         m.put("brakePadWear", brakePadWear);
+        m.put("batteryHealth", batteryHealth);
+        m.put("tyreTread", tyreTread);
+        m.put("engineHealth", engineHealth);
+        m.put("odometerKm", odometerKm);
+        m.put("engineHours", engineHours);
+        m.put("accelMin", accelMin);
+        m.put("accelMax", accelMax);
         m.values().removeIf(v -> v == null);
         return m;
     }

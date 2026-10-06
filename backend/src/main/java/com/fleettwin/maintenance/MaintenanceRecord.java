@@ -31,6 +31,13 @@ public class MaintenanceRecord {
     private Long vehicleId;
     private Long componentId;
 
+    /** brakes, battery, tyres or engine when the work renews that part (starts a new wear lifecycle). */
+    @Size(max = 50)
+    private String component;
+    /** FAILURE, PREVENTIVE or RECOMMENDATION. */
+    @Size(max = 20)
+    private String cause;
+
     @NotBlank
     @Size(max = 50)
     private String type;

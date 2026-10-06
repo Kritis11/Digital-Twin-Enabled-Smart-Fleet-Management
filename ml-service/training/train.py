@@ -20,7 +20,7 @@ from xgboost import XGBClassifier
 from app import model as model_store
 from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
 from app.model import AnomalyModel
-from training.export_data import DEFAULT_OUT, ROOT, load_csv, summarise
+from training.export_data import ANOMALY_FAULTS, DEFAULT_OUT, ROOT, load_csv, summarise
 
 REPORT = ROOT / "docs" / "model_report.md"
 TEST_FRACTION = 0.2
@@ -46,6 +46,7 @@ def evaluate(y_true: pd.Series, y_pred: pd.Series, faults: pd.Series) -> dict:
 def train(df: pd.DataFrame) -> tuple[dict[str, AnomalyModel], dict]:
     """Returns both fitted models (with metrics in their config) and facts about the split."""
     df = df.sort_values(["vehicle_id", "ts"]).reset_index(drop=True)
+    df["injected_fault"] = df["injected_fault"].where(df["injected_fault"].isin(ANOMALY_FAULTS))
     X = build_features(df)
     y = df["injected_fault"].notna()
     is_train, cutoff = time_split(df)

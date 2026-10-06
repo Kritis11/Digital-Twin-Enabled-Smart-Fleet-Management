@@ -53,16 +53,23 @@ fleet:
   # Component status rules. A component's status is the worst of its rules.
   # Limits: warning-above, critical-above, warning-below, critical-below (all optional).
   # Metrics: speed, engineTemp, rpm, batteryVoltage, fuelLevel, vibration, brakePadWear,
-  #          tyrePressureFl, tyrePressureFr, tyrePressureRl, tyrePressureRr.
+  #          tyrePressureFl, tyrePressureFr, tyrePressureRl, tyrePressureRr,
+  #          batteryHealth (%), tyreTread (mm), engineHealth (0-100).
   rules:
     - { component: engine,  metric: engineTemp,     warning-above: 105,  critical-above: 115 }
     - { component: engine,  metric: vibration,      warning-above: 1.5,  critical-above: 2.5 }
+    - { component: engine,  metric: engineHealth,   warning-below: 55,   critical-below: 45 }
     - { component: battery, metric: batteryVoltage, warning-below: 12.4, critical-below: 11.8 }
+    - { component: battery, metric: batteryHealth,  warning-below: 60,   critical-below: 50 }
     - { component: brakes,  metric: brakePadWear,   warning-above: 70,   critical-above: 85 }
     - { component: tyre_fl, metric: tyrePressureFl, warning-below: 28,   critical-below: 24 }
     - { component: tyre_fr, metric: tyrePressureFr, warning-below: 28,   critical-below: 24 }
     - { component: tyre_rl, metric: tyrePressureRl, warning-below: 28,   critical-below: 24 }
     - { component: tyre_rr, metric: tyrePressureRr, warning-below: 28,   critical-below: 24 }
+    - { component: tyre_fl, metric: tyreTread,      warning-below: 3,    critical-below: 2 }
+    - { component: tyre_fr, metric: tyreTread,      warning-below: 3,    critical-below: 2 }
+    - { component: tyre_rl, metric: tyreTread,      warning-below: 3,    critical-below: 2 }
+    - { component: tyre_rr, metric: tyreTread,      warning-below: 3,    critical-below: 2 }
     - { component: fuel,    metric: fuelLevel,      warning-below: 15,   critical-below: 7 }
 
 springdoc:

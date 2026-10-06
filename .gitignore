@@ -31,3 +31,6 @@ __pycache__/
 
 # ML training exports
 ml-service/training/data/
+
+# Simulator wear state carried from fast-forward into live mode
+simulator/state.json

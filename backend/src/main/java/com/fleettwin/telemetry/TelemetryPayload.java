@@ -25,6 +25,13 @@ public record TelemetryPayload(
         Double tyrePressureRl,
         Double tyrePressureRr,
         Double brakePadWear,
+        Double batteryHealth,
+        Double tyreTread,
+        Double engineHealth,
+        Double odometerKm,
+        Double engineHours,
+        Double accelMin,
+        Double accelMax,
         List<String> dtcCodes,
         String injectedFault) {
 
@@ -45,6 +52,13 @@ public record TelemetryPayload(
         t.setTyrePressureRl(tyrePressureRl);
         t.setTyrePressureRr(tyrePressureRr);
         t.setBrakePadWear(brakePadWear);
+        t.setBatteryHealth(batteryHealth);
+        t.setTyreTread(tyreTread);
+        t.setEngineHealth(engineHealth);
+        t.setOdometerKm(odometerKm);
+        t.setEngineHours(engineHours);
+        t.setAccelMin(accelMin);
+        t.setAccelMax(accelMax);
         t.setDtcCodes(dtcCodes != null ? dtcCodes : List.of());
         t.setInjectedFault(injectedFault);
         return t;

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 import psycopg
+import psycopg.sql
 from dotenv import load_dotenv
 
 from app.features import SIGNALS
@@ -24,6 +25,10 @@ DEFAULT_OUT = Path(__file__).resolve().parent / "data" / "telemetry.csv"
 MIN_EPISODES = 80
 MIN_MINUTES = 45
 
+# The sensor faults the anomaly model should catch. Other labels (fuel_theft, <part>_failure) are not
+# visible in its input signals and count as healthy here.
+ANOMALY_FAULTS = ["overheating", "vibration_spike", "low_tyre_pressure", "low_battery"]
+
 
 def load_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
@@ -34,7 +39,7 @@ def load_csv(path: Path) -> pd.DataFrame:
 def summarise(df: pd.DataFrame) -> dict:
     """Row, fault-row and fault-episode counts. An episode is a run of consecutive rows with the same fault."""
     df = df.sort_values(["vehicle_id", "ts"])
-    fault = df["injected_fault"].fillna("")
+    fault = df["injected_fault"].where(df["injected_fault"].isin(ANOMALY_FAULTS), "")
     starts = (fault != "") & (fault != fault.groupby(df["vehicle_id"]).shift())
     return {
         "rows": len(df),
@@ -48,6 +53,9 @@ def summarise(df: pd.DataFrame) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    p.add_argument("--from", dest="since", default="-infinity",
+                   help="only export readings at or after this timestamp (use it to leave out fast-forwarded "
+                        "history, whose 30 s readings do not suit the 30 s / 2 min feature windows)")
     args = p.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -58,7 +66,8 @@ def main() -> None:
     columns = ", ".join(["vehicle_id", ts, *SIGNALS, "injected_fault"])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with psycopg.connect(dsn) as conn, conn.cursor() as cur, open(args.out, "wb") as f:
-        with cur.copy(f"COPY (SELECT {columns} FROM telemetry ORDER BY vehicle_id, ts) TO STDOUT WITH CSV HEADER") as copy:
+        with cur.copy(f"COPY (SELECT {columns} FROM telemetry WHERE ts >= {{}} ORDER BY vehicle_id, ts) "
+                      "TO STDOUT WITH CSV HEADER".format(psycopg.sql.Literal(args.since).as_string(conn))) as copy:
             for chunk in copy:
                 f.write(chunk)
 
