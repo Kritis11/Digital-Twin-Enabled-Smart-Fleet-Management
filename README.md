@@ -1,17 +1,47 @@
 # Fleet Twin
 
-Foundation for a digital-twin based predictive fleet maintenance system. This is the skeleton
-only: infrastructure, schema, and one working data path
-(simulator → MQTT → backend → TimescaleDB). No business features yet.
+A digital-twin based predictive fleet maintenance system. Simulated vehicles publish telemetry over
+MQTT; the backend stores it, keeps a live twin of every vehicle, raises alerts from threshold rules
+and from an anomaly model, and a dashboard shows it all in real time.
+
+## Features
+
+- **Digital twin** per vehicle: identity, location and heading, MOVING / IDLE / OFFLINE state, latest
+  sensor values, a status for each component (engine, battery, brakes, four tyres, fuel system),
+  health score and anomaly flag. Live state is in Redis; PostgreSQL keeps the history.
+- **Alerts** from two sources: threshold rules (`RULE`) and the anomaly model (`ML`). The same open
+  alert is never raised twice; an alert stays open until it is acknowledged.
+- **Anomaly detection**: an XGBoost model over rolling-window features, trained on simulator data,
+  stored in MinIO and served by the ML service with the top contributing features as reasons.
+  See [docs/model_report.md](docs/model_report.md).
+- **Dashboard**: fleet map, vehicle twin view with charts and anomaly markers, live alert feed.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SIM[Simulator] -- MQTT --> MQ[Mosquitto]
+    MQ -- fleet/+/telemetry --> BE[Spring Boot backend]
+    BE -- telemetry, alerts, maintenance --> DB[(TimescaleDB)]
+    BE -- live twins --> RD[(Redis)]
+    BE -- every 10 s: /anomaly, /health-score --> ML[FastAPI ML service]
+    ML -- loads latest model --> S3[(MinIO)]
+    TR[training/train.py] -- exports telemetry --> DB
+    TR -- uploads model --> S3
+    UI[Angular dashboard] -- REST --> BE
+    BE -- STOMP /topic/twins, /topic/alerts --> UI
+```
+
+More detail in [docs/architecture.md](docs/architecture.md).
 
 ```
 fleet-twin/
   backend/      Spring Boot 3.5, Java 21, Maven
   frontend/     Angular 22
-  ml-service/   Python 3.11, FastAPI (placeholder endpoints)
+  ml-service/   Python 3.11, FastAPI, XGBoost; training scripts in ml-service/training
   simulator/    Python MQTT telemetry simulator
   infra/        docker-compose.yml, mosquitto config, db init scripts
-  docs/         architecture notes
+  docs/         architecture notes, model report
 ```
 
 ## Prerequisites
@@ -24,6 +54,7 @@ fleet-twin/
 | Angular CLI | 22 |
 | Python | 3.11 (`python3.11` must be on the PATH) |
 | Docker Desktop | running, with Compose v2+ |
+| OpenMP runtime | macOS only, needed by XGBoost: `brew install libomp` |
 
 ## Ports
 
@@ -44,7 +75,7 @@ The four infra ports can be changed in `.env` (`POSTGRES_PORT`, `MQTT_PORT`, `MI
 
 ```bash
 cp .env.example .env          # then change the passwords
-(cd ml-service && python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt)
+(cd ml-service && python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt)
 (cd simulator  && python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt)
 (cd frontend   && npm ci)
 ```
@@ -76,6 +107,21 @@ mvn spring-boot:run           # Ctrl+C to stop
 - Flyway creates the schema and seeds 5 vehicles (ids 1–5) on first start.
 - Must be started from `backend/` so it finds `../.env`.
 
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/vehicles` | Every vehicle's twin |
+| `GET /api/vehicles/{id}/twin` | One twin, plus its recent maintenance records |
+| `GET /api/vehicles/{id}/telemetry?from=&to=&interval=` | Bucket averages via `time_bucket()`. `from`/`to` are ISO instants (default: last 15 minutes); `interval` is e.g. `10s`, `5m`, `1h` (default: about 300 points) |
+| `GET /api/alerts?status=&vehicleId=&severity=&source=&from=&to=` | Newest first. `status` is `open` (default), `acknowledged` or `all` |
+| `POST /api/alerts/{id}/acknowledge` | Acknowledge an alert |
+| `GET/POST /api/maintenance-records`, `GET/PUT/DELETE /api/maintenance-records/{id}` | Maintenance CRUD; `GET` takes `?vehicleId=` |
+| WebSocket `ws://localhost:8080/ws` (STOMP) | `/topic/twins` gets every twin update, `/topic/alerts` every new or acknowledged alert |
+
+Everything tunable is in `backend/src/main/resources/application.yml` under `fleet`:
+component threshold rules (`fleet.rules`), the offline timeout and moving speed (`fleet.twin`),
+and the ML service URL, scoring interval, window and timeout (`fleet.ml`). If the ML service is
+down the backend logs one warning per cycle and carries on with rule-based statuses.
+
 ### 3. ML service
 
 ```bash
@@ -83,15 +129,30 @@ cd ml-service
 .venv/bin/uvicorn app.main:app --port 8000     # Ctrl+C to stop
 ```
 
-Docs at http://localhost:8000/docs. Or as a container:
-`docker build -t fleet-twin-ml ml-service && docker run --rm -p 8000:8000 fleet-twin-ml`.
+Docs at http://localhost:8000/docs. It loads the newest model from MinIO at startup; until one has
+been trained (see [Retraining the model](#retraining-the-model)) `/anomaly` returns 503 and the
+backend falls back to health scores from component statuses alone.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Status and the loaded model version |
+| `POST /anomaly` | Takes one vehicle's recent readings (ideally the last 2 minutes), scores the newest. Returns `{ vehicle_id, is_anomaly, score, reasons[], model_version }` |
+| `POST /health-score` | 100 minus 10 per WARNING component, 25 per CRITICAL component and 30 × anomaly score, floored at 0. Returns the score and the deductions |
+| `POST /model/reload` | Load the newest model from MinIO without restarting |
+| `POST /rul` | Placeholder until Phase 2 |
 
 ```bash
 curl localhost:8000/health
-curl -X POST localhost:8000/anomaly      -H 'Content-Type: application/json' -d '{"vehicle_id":1,"telemetry":{"engine_temp":118}}'
-curl -X POST localhost:8000/health-score -H 'Content-Type: application/json' -d '{"vehicle_id":1}'
-curl -X POST localhost:8000/rul          -H 'Content-Type: application/json' -d '{"vehicle_id":1,"component":"brake_pads"}'
+curl -X POST localhost:8000/anomaly -H 'Content-Type: application/json' \
+  -d '{"vehicle_id":1,"readings":[{"ts":"2026-10-06T10:00:00Z","engine_temp":118,"vibration":0.4}]}'
+curl -X POST localhost:8000/health-score -H 'Content-Type: application/json' \
+  -d '{"vehicle_id":1,"components":{"engine":"CRITICAL","battery":"OK"},"anomaly_score":0.9}'
 ```
+
+The health score weights are env vars (`HEALTH_WARNING_PENALTY`, `HEALTH_CRITICAL_PENALTY`,
+`HEALTH_ANOMALY_WEIGHT`), as are `MINIO_ENDPOINT` and `MODEL_BUCKET`. To run it as a container, give
+it the MinIO settings: `docker build -t fleet-twin-ml ml-service && docker run --rm -p 8000:8000
+--env-file .env -e MINIO_ENDPOINT=host.docker.internal:9000 fleet-twin-ml`.
 
 ### 4. Simulator
 
@@ -109,7 +170,7 @@ below until more vehicles are added.
 Check that rows are arriving:
 
 ```bash
-docker exec fleet-twin-timescaledb-1 psql -U fleettwin -d fleettwin -c "SELECT count(*) FROM telemetry;"
+docker compose exec timescaledb psql -U fleettwin -d fleettwin -c "SELECT count(*) FROM telemetry;"
 ```
 
 ### 5. Frontend
@@ -119,13 +180,38 @@ cd frontend
 npm start                     # http://localhost:4200, Ctrl+C to stop
 ```
 
-The Fleet Overview page shows "Backend connected" or "Backend unreachable". The backend URL is in
+- **Fleet Overview**: map with one marker per vehicle (arrow = heading; green / amber / red =
+  health; faded = offline), summary cards, and a vehicle list. Click a vehicle to open it.
+- **Vehicle detail**: health gauge, component tiles, charts with a 15 min / 1 h / 24 h selector and
+  a vertical marker for each alert (solid purple = ML anomaly, dashed orange = rule alert),
+  and the maintenance history with a form to add records.
+- **Alerts**: live feed with filters and an acknowledge button.
+
+The sidebar shows "Live" while the WebSocket is connected. Backend and WebSocket URLs, the health
+colour bands, the chart refresh interval and the map tiles are in
 `frontend/src/environments/environment.ts`.
+
+## Retraining the model
+
+Run the simulator for at least 45 minutes first (the export step tells you if there is too little
+data), then from `ml-service/`:
+
+```bash
+.venv/bin/python -m training.export_data     # telemetry + injected_fault labels -> training/data/telemetry.csv
+.venv/bin/python -m training.train           # trains both models, writes docs/model_report.md, uploads the better one
+curl -X POST localhost:8000/model/reload     # or restart the ML service
+```
+
+`train.py` compares an Isolation Forest (unsupervised) with XGBoost (supervised) on a time-based
+split and uploads the one with the higher F1 to MinIO as `models/anomaly/<UTC timestamp>/`. Each
+run is a new version and the service always loads the newest. `--no-upload` trains and writes the
+report only.
 
 ## Tests
 
 ```bash
-(cd backend && mvn test)                                   # telemetry payload parsing
+(cd backend && mvn test)                                   # payload parsing, threshold rules, alert de-duplication
+(cd ml-service && .venv/bin/python -m pytest)              # feature pipeline, /anomaly and /health-score
 (cd simulator && .venv/bin/python simulator.py --self-check)
 ```
 
@@ -146,12 +232,16 @@ The Fleet Overview page shows "Backend connected" or "Backend unreachable". The 
   backend wasn't started from `backend/`.
 - **Backend logs `Not authorized to connect` (MQTT)**: `MQTT_USERNAME`/`MQTT_PASSWORD` changed
   after Mosquitto started. `docker compose up -d --force-recreate mosquitto`.
-- **Flyway `checksum mismatch`**: an applied migration file was edited. Add a new `V3__...sql`
+- **Flyway `checksum mismatch`**: an applied migration file was edited. Add a new `V4__...sql`
   instead, or reset the dev database with `docker compose down -v`.
 - **Simulator runs but the row count doesn't grow**: check the backend is running and look for
   `Dropped telemetry` in its log (unknown vehicle id or malformed JSON).
-- **Frontend shows "Backend unreachable"**: the backend is down, or the page is served from an
+- **Frontend shows "Cannot reach the backend"**: the backend is down, or the page is served from an
   origin other than `http://localhost:4200` (CORS).
+- **`XGBoost Library (libxgboost.dylib) could not be loaded`** (macOS): `brew install libomp`.
+- **Vehicles have no health score / backend logs `ML service unavailable`**: the ML service isn't
+  running on port 8000. Rule-based statuses and alerts keep working without it.
+- **Backend logs `ML service has no anomaly model loaded`**: train one (see Retraining the model).
 - **MinIO image**: MinIO no longer publishes official images to Docker Hub or Quay, so compose
   uses the Chainguard build pinned by digest. To upgrade, pull `cgr.dev/chainguard/minio:latest`
   and replace the digest in `infra/docker-compose.yml`.
