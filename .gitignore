@@ -28,3 +28,6 @@ __pycache__/
 .vscode/
 *.iml
 .DS_Store
+
+# ML training exports
+ml-service/training/data/
