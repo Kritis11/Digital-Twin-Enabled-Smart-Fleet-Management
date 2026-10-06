@@ -116,7 +116,7 @@ public class TwinService {
     }
 
     /** Initial compass bearing in degrees (0 = north, 90 = east) from the first point to the second. */
-    static double bearing(double lat1, double lng1, double lat2, double lng2) {
+    public static double bearing(double lat1, double lng1, double lat2, double lng2) {
         double p1 = Math.toRadians(lat1);
         double p2 = Math.toRadians(lat2);
         double dl = Math.toRadians(lng2 - lng1);

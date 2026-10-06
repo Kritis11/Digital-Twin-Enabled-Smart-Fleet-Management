@@ -4,6 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fleettwin.driving.DrivingService;
 import com.fleettwin.twin.TwinService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ public class TelemetryIngestService {
     private final TelemetryRepository repository;
     private final ObjectMapper objectMapper;
     private final TwinService twinService;
+    private final DrivingService drivingService;
 
     /** Persists one MQTT message. A bad message is logged and dropped so it can't stall the subscriber. */
     public void ingest(String topic, String json) {
@@ -34,6 +36,11 @@ public class TelemetryIngestService {
             twinService.onTelemetry(telemetry);
         } catch (Exception e) {
             log.warn("Twin update failed for vehicle {}: {}", telemetry.getVehicleId(), e.toString());
+        }
+        try {
+            drivingService.onTelemetry(telemetry);
+        } catch (Exception e) {
+            log.warn("Driving analysis failed for vehicle {}: {}", telemetry.getVehicleId(), e.toString());
         }
     }
 

@@ -40,6 +40,27 @@ fleet:
     maintenance-summary-size: 5   # records included in GET /api/vehicles/{id}/twin
   alerts:
     max-results: 500
+  # Driving events, trips and the driver score. The formula is documented in docs/driver_score.md.
+  driving:
+    speed-limit-kmh: 80
+    harsh-brake-ms2: 3.0          # deceleration at or above this is harsh braking
+    rapid-accel-ms2: 2.5
+    cornering-degrees: 25         # heading change between two readings that counts as a turn ...
+    cornering-speed-kmh: 30       # ... and the speed at or above which taking it is "sharp"
+    idle-after: 2m                # standing with the engine on for this long is excessive idling
+    trip-gap: 5m                  # no telemetry, or standing still, for this long ends the trip
+    min-score-km: 10              # trips shorter than this are scored as if they were this long
+    weights:                      # penalty points per event, before the severity multiplier
+      harsh-braking: 1.0
+      rapid-acceleration: 0.6
+      speeding: 0.4
+      sharp-cornering: 0.6
+      excessive-idling: 0.3
+    severity-multipliers: { medium: 1.5, high: 2.0 }   # LOW is 1.0
+    flush-interval-ms: 30000      # how often trips of vehicles that went quiet are closed
+    max-results: 500              # cap on events / trips returned by one request
+  fuel:
+    tank-litres: 300              # fuel_level is a percentage of this
   ml:
     enabled: true
     url: ${ML_SERVICE_URL:http://localhost:8000}

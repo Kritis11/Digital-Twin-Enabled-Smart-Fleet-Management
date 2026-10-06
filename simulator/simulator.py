@@ -17,6 +17,7 @@ import json
 import math
 import os
 import random
+import signal
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -440,6 +441,9 @@ def main() -> None:
             return
         vehicle.service(component)
         print(f"vehicle {vehicle.id}: {component} serviced, wear reset")
+
+    # `kill` (SIGTERM) should stop it as cleanly as Ctrl+C, so the wear state still gets saved.
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="fleet-twin-simulator")
     client.username_pw_set(os.getenv("MQTT_USERNAME"), os.getenv("MQTT_PASSWORD"))
