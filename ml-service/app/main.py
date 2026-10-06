@@ -1,7 +1,8 @@
-"""Fleet Twin ML service: anomaly detection and health score. /rul is still a placeholder (Phase 2)."""
+"""Fleet Twin ML service: anomaly detection, health score and remaining useful life."""
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import model as model_store
+from . import rul as rul_lib
 from .model import AnomalyModel
+from .rul import RulModel
 
 # Repo-root .env when run from a checkout; real env vars (e.g. in Docker) win.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -26,6 +29,13 @@ CRITICAL_PENALTY = float(os.getenv("HEALTH_CRITICAL_PENALTY", "25"))
 ANOMALY_WEIGHT = float(os.getenv("HEALTH_ANOMALY_WEIGHT", "30"))
 
 MODEL: AnomalyModel | None = None
+RUL_MODELS: dict[str, RulModel] = {}
+
+# /rul reads a vehicle's daily history from TimescaleDB; cache it briefly, since it changes slowly
+# and the backend asks for four components in a row.
+RUL_HISTORY_DAYS = int(os.getenv("RUL_HISTORY_DAYS", "120"))
+RUL_CACHE_SECONDS = float(os.getenv("RUL_CACHE_SECONDS", "30"))
+_daily_cache: dict[int, tuple[float, pd.DataFrame]] = {}
 
 
 def reload_model() -> None:
@@ -38,9 +48,20 @@ def reload_model() -> None:
         return
     if latest is None:
         log.warning("No anomaly model in MinIO yet; /anomaly returns 503 until one is trained")
-        return
-    MODEL = latest
-    log.info("Loaded anomaly model %s (%s)", latest.config["version"], latest.config["kind"])
+    else:
+        MODEL = latest
+        log.info("Loaded anomaly model %s (%s)", latest.config["version"], latest.config["kind"])
+    for component in rul_lib.COMPONENTS:
+        try:
+            stored = model_store.download_latest(f"rul/{component}")
+        except Exception as e:
+            log.warning("Could not load the RUL model for %s from MinIO: %s", component, e)
+            continue
+        if stored is None:
+            log.warning("No RUL model for %s in MinIO yet; /rul returns 503 for it", component)
+            continue
+        RUL_MODELS[component] = RulModel.loads(*stored)
+        log.info("Loaded RUL model for %s: %s (%s)", component, stored[0]["version"], stored[0]["kind"])
 
 
 @asynccontextmanager
@@ -105,16 +126,24 @@ class RulResponse(BaseModel):
     vehicle_id: int
     component: str
     rul_days: float = Field(ge=0)
+    # 80% prediction interval, in days
+    lower_bound: float = Field(ge=0)
+    upper_bound: float = Field(ge=0)
     confidence: float = Field(ge=0, le=1)
+    model_version: str
 
 
 @app.get("/health")
-def health() -> dict[str, str | None]:
-    return {"status": "ok", "model_version": MODEL.config["version"] if MODEL else None}
+def health() -> dict:
+    return {
+        "status": "ok",
+        "model_version": MODEL.config["version"] if MODEL else None,
+        "rul_models": {c: m.config["version"] for c, m in RUL_MODELS.items()},
+    }
 
 
 @app.post("/model/reload")
-def reload() -> dict[str, str | None]:
+def reload() -> dict:
     """Picks up a newly trained model without restarting the service."""
     reload_model()
     return health()
@@ -151,7 +180,31 @@ def health_score(req: HealthScoreRequest) -> HealthScoreResponse:
     )
 
 
+def load_vehicle_history(vehicle_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(daily rows, maintenance records) for one vehicle. Maintenance is always read fresh, so a part
+    that was just replaced starts its new lifecycle straight away."""
+    with rul_lib.connect() as conn:
+        cached = _daily_cache.get(vehicle_id)
+        if cached is None or time.monotonic() - cached[0] > RUL_CACHE_SECONDS:
+            cached = (time.monotonic(), rul_lib.load_daily(conn, vehicle_id, RUL_HISTORY_DAYS))
+            _daily_cache[vehicle_id] = cached
+        return cached[1], rul_lib.load_maintenance(conn, vehicle_id)
+
+
 @app.post("/rul")
 def rul(req: RulRequest) -> RulResponse:
-    # Placeholder until Phase 2.
-    return RulResponse(vehicle_id=req.vehicle_id, component=req.component, rul_days=365.0, confidence=0.0)
+    """Days until the part reaches its failure threshold, from the vehicle's history in TimescaleDB."""
+    if req.component not in rul_lib.COMPONENTS:
+        raise HTTPException(status_code=404, detail=f"component must be one of {list(rul_lib.COMPONENTS)}")
+    model = RUL_MODELS.get(req.component)
+    if model is None:
+        raise HTTPException(status_code=503, detail=f"no RUL model loaded for {req.component}")
+    try:
+        daily, maintenance = load_vehicle_history(req.vehicle_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"could not read vehicle history: {e}") from e
+    if daily.empty:
+        raise HTTPException(status_code=404, detail="no telemetry with wear data for this vehicle")
+    prediction = model.predict_latest(daily, maintenance)
+    return RulResponse(vehicle_id=req.vehicle_id, component=req.component,
+                       model_version=model.config["version"], **prediction)

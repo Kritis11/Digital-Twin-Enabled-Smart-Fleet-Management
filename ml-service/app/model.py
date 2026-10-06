@@ -81,37 +81,47 @@ def _client() -> tuple[Minio, str]:
     return client, os.getenv("MODEL_BUCKET", "models")
 
 
-def save(model: AnomalyModel) -> str:
-    """Uploads under anomaly/<version>/ and returns the version."""
+def upload(prefix: str, version: str, config: dict, blob: bytes) -> None:
+    """Stores a model under <prefix>/<version>/ in the models bucket."""
     client, bucket = _client()
     if not client.bucket_exists(bucket):
         client.make_bucket(bucket)
-    version = model.config["version"]
-    for name, data in (("model.bin", model.dumps()), ("config.json", json.dumps(model.config, indent=2).encode())):
-        client.put_object(bucket, f"{PREFIX}/{version}/{name}", io.BytesIO(data), len(data))
-    return version
+    for name, data in (("model.bin", blob), ("config.json", json.dumps(config, indent=2).encode())):
+        client.put_object(bucket, f"{prefix}/{version}/{name}", io.BytesIO(data), len(data))
 
 
-def load_latest() -> AnomalyModel | None:
-    """Newest version in the bucket, or None if nothing has been trained yet."""
+def download_latest(prefix: str) -> tuple[dict, bytes] | None:
+    """(config, blob) of the newest version under <prefix>/, or None if there is none."""
     client, bucket = _client()
     if not client.bucket_exists(bucket):
         return None
     # config.json is uploaded last, so its presence means the version is complete.
     versions = sorted(
-        o.object_name.split("/")[1]
-        for o in client.list_objects(bucket, prefix=f"{PREFIX}/", recursive=True)
+        o.object_name.split("/")[-2]
+        for o in client.list_objects(bucket, prefix=f"{prefix}/", recursive=True)
         if o.object_name.endswith("/config.json")
     )
     if not versions:
         return None
 
     def read(name: str) -> bytes:
-        response = client.get_object(bucket, f"{PREFIX}/{versions[-1]}/{name}")
+        response = client.get_object(bucket, f"{prefix}/{versions[-1]}/{name}")
         try:
             return response.read()
         finally:
             response.close()
             response.release_conn()
 
-    return AnomalyModel.loads(json.loads(read("config.json")), read("model.bin"))
+    return json.loads(read("config.json")), read("model.bin")
+
+
+def save(model: AnomalyModel) -> str:
+    """Uploads under anomaly/<version>/ and returns the version."""
+    upload(PREFIX, model.config["version"], model.config, model.dumps())
+    return model.config["version"]
+
+
+def load_latest() -> AnomalyModel | None:
+    """Newest version in the bucket, or None if nothing has been trained yet."""
+    latest = download_latest(PREFIX)
+    return AnomalyModel.loads(*latest) if latest else None

@@ -21,8 +21,8 @@ from app import model as model_store
 from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
 from app.model import AnomalyModel
 from training.export_data import ANOMALY_FAULTS, DEFAULT_OUT, ROOT, load_csv, summarise
+from training.report import REPORT, write_section
 
-REPORT = ROOT / "docs" / "model_report.md"
 TEST_FRACTION = 0.2
 THRESHOLD = 0.5
 
@@ -90,7 +90,7 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
     d = info["data"]
     names = {"isolation_forest": "Isolation Forest (unsupervised)", "xgboost": "XGBoost (supervised)"}
     lines = [
-        "# Anomaly model report",
+        "# Anomaly detection model",
         "",
         f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC by `ml-service/training/train.py`. "
         f"Model version `{models[best].config['version']}`.",
@@ -155,7 +155,7 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
         "which is a poor fit for it.",
         "",
     ]
-    REPORT.write_text("\n".join(lines))
+    write_section("anomaly", "\n".join(lines))
 
 
 def main() -> None:
