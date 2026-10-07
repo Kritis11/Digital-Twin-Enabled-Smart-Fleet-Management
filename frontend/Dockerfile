@@ -10,7 +10,7 @@ RUN npx ng build --configuration production
 # proxies /api and /ws to the backend. The nginx master runs as root (ports 80/443, certificate key);
 # its workers, which handle the traffic, run as the unprivileged nginx user.
 FROM nginx:1.30.5-alpine
-RUN apk add --no-cache openssl
+RUN apk upgrade --no-cache && apk add --no-cache openssl
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY nginx/15-certificate.sh /docker-entrypoint.d/15-certificate.sh
 RUN chmod +x /docker-entrypoint.d/15-certificate.sh

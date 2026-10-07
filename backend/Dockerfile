@@ -8,7 +8,8 @@ RUN mvn -B -q -DskipTests package && cp target/backend-*.jar app.jar
 
 # Runtime stage: JRE only, unprivileged user.
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S app && adduser -S -G app app
+# apk upgrade: security fixes published since the base image was built
+RUN apk upgrade --no-cache && addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=build /build/app.jar app.jar
 USER app

@@ -86,6 +86,26 @@ jobs:
           docker compose config --quiet
           docker compose --env-file .env.prod.example -f docker-compose.prod.yml -f docker-compose.mqtt-tls.yml config --quiet
 
+  # Known vulnerabilities in what we depend on (docs/security.md). High and critical findings fail the build.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm audit --audit-level=high
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+        working-directory: e2e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          pip install pip-audit
+          pip-audit -r ml-service/requirements.txt
+          pip-audit -r simulator/requirements.txt
+
   # The production stack, built from this commit and filled with simulated history, driven by a real
   # browser through nginx: every role's main journeys (see e2e/tests).
   e2e:
@@ -157,3 +177,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t fleet-twin-${{ matrix.name }}:${{ github.sha }} ${{ matrix.context }}
+      # Reported, not enforced: a base image can gain a finding with no fix available on any day.
+      - name: Scan the image
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image \
+            --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed fleet-twin-${{ matrix.name }}:${{ github.sha }}

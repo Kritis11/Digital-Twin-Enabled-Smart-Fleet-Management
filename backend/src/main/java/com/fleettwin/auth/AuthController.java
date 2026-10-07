@@ -5,7 +5,6 @@ import java.security.Principal;
 import com.fleettwin.auth.TokenService.Tokens;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -20,7 +19,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 public class AuthController {
 
     public record Login(@NotBlank String username, @NotBlank String password) {
@@ -33,13 +31,26 @@ public class AuthController {
     private final PasswordEncoder passwords;
     private final TokenService tokens;
 
+    /** A real hash that no password is known for, checked when the username is unknown. */
+    private final String noSuchUserHash;
+
+    public AuthController(UserRepository users, PasswordEncoder passwords, TokenService tokens) {
+        this.users = users;
+        this.passwords = passwords;
+        this.tokens = tokens;
+        this.noSuchUserHash = passwords.encode(java.util.UUID.randomUUID().toString());
+    }
+
     @PostMapping("/login")
     public Tokens login(@Valid @RequestBody Login login) {
-        // One answer for "no such user", "wrong password" and "disabled", so usernames cannot be probed.
-        return users.findByUsername(login.username())
-                .filter(u -> u.isEnabled() && passwords.matches(login.password(), u.getPasswordHash()))
-                .map(tokens::issue)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Wrong username or password"));
+        // One answer for "no such user", "wrong password" and "disabled", so usernames cannot be probed;
+        // and the password check runs either way, so the response time does not give it away either.
+        User user = users.findByUsername(login.username()).orElse(null);
+        boolean matches = passwords.matches(login.password(), user != null ? user.getPasswordHash() : noSuchUserHash);
+        if (user == null || !user.isEnabled() || !matches) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Wrong username or password");
+        }
+        return tokens.issue(user);
     }
 
     /** A new access and refresh token for a refresh token that is still valid. */

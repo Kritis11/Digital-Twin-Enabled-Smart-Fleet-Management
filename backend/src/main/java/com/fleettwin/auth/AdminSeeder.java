@@ -27,8 +27,10 @@ public class AdminSeeder implements ApplicationRunner {
             log.warn("There are no users and ADMIN_USERNAME / ADMIN_PASSWORD are not set: nobody can log in");
             return;
         }
-        if (props.adminPassword().length() < props.minPasswordLength()) {
-            throw new IllegalStateException("ADMIN_PASSWORD must be at least " + props.minPasswordLength() + " characters");
+        if (props.adminPassword().length() < props.minPasswordLength()
+                || props.adminPassword().startsWith(SecurityProperties.PLACEHOLDER)) {
+            throw new IllegalStateException("ADMIN_PASSWORD must be at least " + props.minPasswordLength()
+                    + " characters and not the example value");
         }
         User admin = new User();
         admin.setUsername(props.adminUsername());

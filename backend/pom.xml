@@ -22,9 +22,26 @@
         <paho.version>1.2.5</paho.version>
         <poi.version>5.5.1</poi.version>
         <openpdf.version>2.4.0</openpdf.version>
-        <minio.version>8.5.17</minio.version>
+        <minio.version>8.6.0</minio.version>
+        <!-- Security updates ahead of the Spring Boot parent (docs/security.md). Remove each line once
+             the parent manages that version or a newer one. -->
+        <jackson-bom.version>2.21.7</jackson-bom.version>
+        <netty.version>4.1.137.Final</netty.version>
+        <postgresql.version>42.7.12</postgresql.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
         <jacoco.version>0.8.15</jacoco.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Comes in with the MinIO client; pinned for the security fixes in 1.85 and later. -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -58,6 +75,13 @@
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>${minio.version}</version>
+        </dependency>
+        <!-- The MinIO client needs OkHttp 5, whose classes for the JVM live in okhttp-jvm. Gradle finds
+             that by itself; Maven has to be told. Keep the version in step with the client's. -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+            <version>5.1.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

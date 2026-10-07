@@ -4,11 +4,14 @@ RUN python -m venv /venv
 COPY requirements.txt .
 # xgboost's Linux wheel drags in nvidia-nccl (470 MB), which only GPU training uses. Models here run on the CPU.
 RUN /venv/bin/pip install --no-cache-dir -r requirements.txt \
-    && /venv/bin/pip uninstall -y nvidia-nccl-cu12
+    && /venv/bin/pip uninstall -y nvidia-nccl-cu12 setuptools wheel
 
 FROM python:3.11.16-slim
 # XGBoost needs the OpenMP runtime, which the slim image lacks.
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/* \
+# Also: pending OS security updates, and the base image's own pip tooling removed (the service runs
+# from /venv and never installs anything).
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/* && pip uninstall -y setuptools wheel pip \
     && useradd --system --create-home app
 COPY --from=build /venv /venv
 ENV PATH=/venv/bin:$PATH PYTHONUNBUFFERED=1

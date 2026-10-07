@@ -4,6 +4,8 @@
 # the backend container is replaced by a new version.
 resolver 127.0.0.11 valid=10s;
 
+server_tokens off;   # do not advertise the nginx version
+
 # Slows down password guessing: this many login attempts a minute per client address (default 10).
 limit_req_zone $binary_remote_addr zone=login:10m rate=${LOGIN_RATE_PER_MINUTE}r/m;
 
@@ -30,6 +32,10 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy same-origin always;
+    add_header Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()" always;
+    # Scripts only from this origin, no plugins, no framing. Styles need 'unsafe-inline' for Angular's
+    # component styles and Leaflet's positioning; images also come from the OpenStreetMap tile servers.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' wss://${DOMAIN}; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
 
     client_max_body_size 1m;
     gzip on;
