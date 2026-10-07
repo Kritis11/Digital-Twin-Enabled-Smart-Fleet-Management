@@ -1,0 +1,13 @@
+{
+  "name": "fleet-twin-e2e",
+  "private": true,
+  "description": "End-to-end tests: a real browser against a running Fleet Twin stack",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.10.1"
+  }
+}

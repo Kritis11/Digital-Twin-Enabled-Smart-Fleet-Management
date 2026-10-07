@@ -389,14 +389,28 @@ The baseline numbers, the interval method and the caveats are in
 ## Tests
 
 ```bash
-(cd backend && mvn test)                                   # payload parsing, threshold rules, alert de-duplication, driving and fuel analysis, recommendation rules, route eligibility, utilisation, access rules per role, report rendering
-(cd ml-service && .venv/bin/python -m pytest)              # feature pipeline, /anomaly, /health-score, RUL features and /rul, route optimisation
+(cd backend && mvn test)                                   # unit tests: fast, nothing else needs to run
+(cd backend && mvn verify)                                 # + integration tests and the coverage report (needs Docker)
+(cd ml-service && .venv/bin/python -m pytest --cov=app)    # ML service tests with coverage
 (cd simulator && .venv/bin/python simulator.py --self-check)
+(cd e2e && npm ci && npx playwright install chromium && npx playwright test)   # browser tests against the running stack
 ```
 
-None of them needs the database or any other service. GitHub Actions (`.github/workflows/ci.yml`)
-runs the same three commands plus the frontend build and a check of the compose files on every
-push, and builds the five Docker images on `main`.
+| Suite | What it covers | Needs |
+|---|---|---|
+| Backend unit tests (`*Test.java`) | Payload parsing, threshold rules, alert de-duplication, driving and fuel analysis, recommendation rules, route eligibility, utilisation, the access rules per role, report rendering | Nothing |
+| Backend integration tests (`ApiIT`) | Every endpoint against real TimescaleDB, Redis, Mosquitto and MinIO started by Testcontainers: MQTT telemetry to twin and alert, recommendations, maintenance, trips and fuel, routes, reports, users, tokens, the WebSocket login. The ML service is a stand-in that can be switched off | Docker |
+| ML service tests | Features, both anomaly model kinds, model storage, `/anomaly`, `/health-score`, `/rul`, route optimisation and the OSRM fallback | Nothing |
+| End-to-end tests (`e2e/`) | A real browser doing each role's journeys: sign in, Fleet Overview, a vehicle, acknowledging an alert, completing a recommendation, planning routes, generating and downloading a report, managing users | The stack running with data in it |
+
+Coverage: `backend/target/site/jacoco/index.html` after `mvn verify` (93% of lines), and the table
+`pytest --cov` prints (94%). The end-to-end tests read the admin login from `.env`, create their own
+`e2e-*` users, and change data the way a user would: one alert is acknowledged and one
+recommendation completed per run. To point them at another stack, see `e2e/playwright.config.ts`.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs all of this on every push: the three test suites
+with coverage, the frontend build, a check of the compose files, and the end-to-end tests against
+the production stack built from that commit. On `main` it also builds the five Docker images.
 
 ## Troubleshooting
 

@@ -1,11 +1,11 @@
-# Rendered at container start: ${DOMAIN} comes from the environment.
+# Rendered at container start: ${DOMAIN} and ${LOGIN_RATE_PER_MINUTE} come from the environment.
 
 # Docker's DNS, asked at request time: nginx can start before the backend does and follows it when
 # the backend container is replaced by a new version.
 resolver 127.0.0.11 valid=10s;
 
-# Slows down password guessing: 10 login attempts a minute per client address.
-limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+# Slows down password guessing: this many login attempts a minute per client address (default 10).
+limit_req_zone $binary_remote_addr zone=login:10m rate=${LOGIN_RATE_PER_MINUTE}r/m;
 
 server {
     listen 80;

@@ -85,8 +85,13 @@ interface PlannedStop {
     @if (result(); as r) {
       <section class="panel">
         <h2>Routes</h2>
-        @if (!r.routes.length) {
-          <p class="error">{{ r.note ?? 'No route could be planned.' }}</p>
+        @if (!r.routes.length && !r.distanceSource) {
+          <!-- the solver was never asked: nobody to send -->
+          <p class="error">{{ r.note ?? 'No vehicle is fit to be assigned.' }}</p>
+        } @else if (!r.routes.length) {
+          <p class="error">
+            No route could be planned: none of the stops can be reached within a day's driving or inside its time window.
+          </p>
         } @else {
           <p>
             {{ r.totalDistanceKm | number: '1.0-1' }} km and about {{ r.totalFuelLitres | number: '1.0-1' }} l of fuel in total,

@@ -18,7 +18,20 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B test
+      # Unit tests, then the integration tests (Testcontainers starts TimescaleDB, Redis, Mosquitto and MinIO in Docker)
+      - run: mvn -B verify
+      - name: Coverage summary
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import csv
+          rows = list(csv.DictReader(open('target/site/jacoco/jacoco.csv')))
+          covered = sum(int(r['LINE_COVERED']) for r in rows); missed = sum(int(r['LINE_MISSED']) for r in rows)
+          print(f"### Backend line coverage: {100 * covered / (covered + missed):.1f}% ({covered} of {covered + missed} lines)")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/target/site/jacoco
 
   ml-service:
     runs-on: ubuntu-latest
@@ -33,7 +46,7 @@ jobs:
           cache: pip
           cache-dependency-path: ml-service/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest
+      - run: python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 
   simulator:
     runs-on: ubuntu-latest
@@ -73,9 +86,65 @@ jobs:
           docker compose config --quiet
           docker compose --env-file .env.prod.example -f docker-compose.prod.yml -f docker-compose.mqtt-tls.yml config --quiet
 
+  # The production stack, built from this commit and filled with simulated history, driven by a real
+  # browser through nginx: every role's main journeys (see e2e/tests).
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure a throwaway production stack
+        run: |
+          secret=$(openssl rand -hex 24)
+          sed -e 's/^DOMAIN=.*/DOMAIN=localhost/' -e "s/change-me[a-z0-9-]*/$secret/" \
+              -e 's/^LOGIN_RATE_PER_MINUTE=.*/LOGIN_RATE_PER_MINUTE=600/' \
+              -e 's#^OSRM_PBF_URL=.*#OSRM_PBF_URL=https://download.geofabrik.de/europe/monaco-latest.osm.pbf#' \
+              .env.prod.example > .env.prod
+          echo "E2E_ADMIN_PASSWORD=$secret" >> "$GITHUB_ENV"
+      - name: Build and start
+        run: docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build --wait
+      - name: Seed 30 days of history and start the simulated vehicles
+        run: |
+          fleet() { docker compose --env-file .env.prod -f docker-compose.prod.yml --profile demo "$@"; }
+          fleet run --rm -T simulator --fast-forward 30 --seed 42
+          fleet up -d simulator
+          token=$(curl -sk -X POST https://localhost/api/auth/login -H 'Content-Type: application/json' \
+            -d "{\"username\":\"admin\",\"password\":\"$E2E_ADMIN_PASSWORD\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["accessToken"])')
+          auth="Authorization: Bearer $token"
+          curl -skf -X POST -H "$auth" https://localhost/api/admin/reanalyse
+          # wait for the first telemetry of every vehicle (which raises the alerts), then run the recommendation rules
+          for i in $(seq 1 30); do
+            seen=$(curl -sk -H "$auth" https://localhost/api/vehicles | python3 -c 'import sys,json; print(sum(1 for t in json.load(sys.stdin) if t.get("lastSeen")))')
+            [ "$seen" = 5 ] && break; sleep 2
+          done
+          curl -skf -X POST -H "$auth" https://localhost/api/recommendations/recompute
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Run the browser tests
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: https://localhost
+          E2E_API_URL: https://localhost
+          E2E_ADMIN_USERNAME: admin
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Container logs
+        if: failure()
+        run: docker compose --env-file .env.prod -f docker-compose.prod.yml --profile demo logs --tail 200
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+
   images:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [backend, ml-service, simulator, frontend, compose]
+    needs: [backend, ml-service, simulator, frontend, compose, e2e]
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -130,6 +130,7 @@ export class Users {
   }
 
   protected create(): void {
+    this.error.set(null);
     this.http
       .post(`${this.api}/users`, { username: this.username(), password: this.password(), role: this.role() })
       .subscribe({
@@ -143,6 +144,7 @@ export class Users {
   }
 
   protected change(user: User, change: { role?: Role; enabled?: boolean; password?: string }): void {
+    this.error.set(null);
     this.http.patch(`${this.api}/users/${user.id}`, change).subscribe({ next: () => this.load(), error: (e) => this.fail(e) });
   }
 
@@ -152,7 +154,6 @@ export class Users {
   }
 
   private load(): void {
-    this.error.set(null);
     this.http.get<User[]>(`${this.api}/users`).subscribe((list) => this.users.set(list));
     this.http.get<AuditEntry[]>(`${this.api}/audit-log`).subscribe((list) => this.audit.set(list));
   }

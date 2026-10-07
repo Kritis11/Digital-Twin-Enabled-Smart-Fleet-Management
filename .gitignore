@@ -35,3 +35,7 @@ ml-service/training/data/
 
 # Simulator wear state carried from fast-forward into live mode
 simulator/state.json
+
+# Coverage data
+.coverage
+htmlcov/

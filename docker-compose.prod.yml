@@ -20,6 +20,7 @@ services:
     build: ./frontend
     environment:
       DOMAIN: ${DOMAIN}
+      LOGIN_RATE_PER_MINUTE: ${LOGIN_RATE_PER_MINUTE:-10}
     ports:
       - "80:80"
       - "443:443"
