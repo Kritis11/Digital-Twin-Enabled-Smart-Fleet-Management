@@ -69,7 +69,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Development and production compose files are valid
         run: |
-          docker compose --env-file .env.example config --quiet
+          cp .env.example .env    # the development compose file reads .env, which is not in git
+          docker compose config --quiet
           docker compose --env-file .env.prod.example -f docker-compose.prod.yml -f docker-compose.mqtt-tls.yml config --quiet
 
   images:
