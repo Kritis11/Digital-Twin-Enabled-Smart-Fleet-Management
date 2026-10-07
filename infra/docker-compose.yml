@@ -111,7 +111,7 @@ services:
       - osrm-data:/data
     networks: [fleet-net]
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 5000"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 5000"]
       interval: 10s
       timeout: 3s
       retries: 6
