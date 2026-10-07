@@ -32,6 +32,9 @@ import { FleetService } from './fleet.service';
           @if (auth.hasRole(...pages.planning)) {
             <a routerLink="/routes" routerLinkActive="active">Route Planner</a>
           }
+          @if (auth.hasRole(...pages.fleetAnalysis)) {
+            <a routerLink="/reports" routerLinkActive="active">Reports</a>
+          }
           @if (auth.hasRole(...pages.admin)) {
             <a routerLink="/users" routerLinkActive="active">User Management</a>
           }

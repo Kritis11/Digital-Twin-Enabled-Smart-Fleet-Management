@@ -10,7 +10,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /** The {@code fleet.*} blocks of application.yml that are bound as a whole. */
 @ConfigurationProperties(prefix = "fleet")
 public record FleetProperties(Twin twin, List<Rule> rules, Ml ml, Driving driving, Fuel fuel,
-                              Recommendations recommendations, Routes routes, Utilisation utilisation) {
+                              Recommendations recommendations, Routes routes, Utilisation utilisation, Reports reports) {
+
+    /** Generated reports are kept in the MinIO bucket; email sends the four weekly reports as PDFs when enabled. */
+    public record Reports(String bucket, int maxResults, int maxPeriodDays, Email email) {
+
+        public record Email(boolean enabled, String from, List<String> to) {
+        }
+    }
 
     /**
      * Route optimisation. A vehicle is left out when a part's remaining useful life is under minRulDays

@@ -15,6 +15,14 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SMTP_STARTTLS:true}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -122,6 +130,19 @@ fleet:
     timeout: 30s                  # for the call to the ML service
     default-service-minutes: 10   # time spent at a stop unless the request says otherwise
     max-stops: 100
+  reports:
+    bucket: ${REPORTS_BUCKET:reports}
+    max-results: 200              # past reports listed
+    max-period-days: 366
+    email:                        # weekly reports by email; needs SMTP_HOST etc. below
+      enabled: ${REPORTS_EMAIL_ENABLED:false}
+      cron: ${REPORTS_EMAIL_CRON:0 0 6 * * MON}   # Mondays 06:00, covering the previous 7 days
+      from: ${REPORTS_EMAIL_FROM:fleet-twin@localhost}
+      to: ${REPORTS_EMAIL_TO:}    # comma-separated
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:${MINIO_API_PORT:9000}}
+    access-key: ${MINIO_ROOT_USER}
+    secret-key: ${MINIO_ROOT_PASSWORD}
   utilisation:
     working-hours-per-day: 10     # 100% utilisation = on trips for this long every day
     under-used-below: 0.3
@@ -156,6 +177,9 @@ springdoc:
     path: /swagger-ui.html
 
 management:
+  health:
+    mail:
+      enabled: false              # email is optional; an unreachable SMTP server must not mark the backend unhealthy
   endpoints:
     web:
       exposure:
