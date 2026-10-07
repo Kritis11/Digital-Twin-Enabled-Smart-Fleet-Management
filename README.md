@@ -96,9 +96,8 @@ fleet-twin/
 |---|---|
 | Java (JDK) | 21 |
 | Maven | 3.9 |
-| Node.js / npm | 24 / 11 |
-| Angular CLI | 22 |
-| Python | 3.11 (`python3.11` must be on the PATH) |
+| Node.js / npm | 22 or later (24 / 11 used) |
+| Python | 3.11 (`python3.11` must be on the PATH; on Windows the `py -3.11` launcher works too) |
 | Docker Desktop | running, with Compose v2+ |
 | OpenMP runtime | macOS only, needed by XGBoost: `brew install libomp` |
 
@@ -122,17 +121,43 @@ MQTT over TLS is switched on.
 
 ## First-time setup
 
+One command checks the prerequisites, creates `.env` with generated passwords, installs every
+dependency, starts the infrastructure, creates the database schema and the admin user, loads
+90 days of simulated history and trains the remaining-life models. It takes about five minutes and
+can be run again safely.
+
 ```bash
-cp .env.example .env          # then change the passwords, JWT_SECRET and ADMIN_PASSWORD
+./setup.sh                    # macOS and Linux
+.\setup.ps1                   # Windows (PowerShell); not yet run on a real Windows machine
+```
+
+Add `--no-data` (`-NoData` on Windows) to skip the simulated history. When it finishes it prints
+the four commands of the next section; the dashboard login is `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+in `.env`.
+
+<details>
+<summary>The same by hand</summary>
+
+```bash
+cp .env.example .env
+# Replace every change-me value in .env. The backend refuses to start with the example JWT_SECRET
+# or ADMIN_PASSWORD. This does all of them at once:
+python3.11 -c 'import pathlib, re, secrets; p = pathlib.Path(".env"); p.write_text(re.sub(r"change-me[\w-]*", lambda _: secrets.token_urlsafe(32), p.read_text()))'
+
 (cd ml-service && python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt)
 (cd simulator  && python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt)
 (cd frontend   && npm ci)
 ```
 
+Then start the infrastructure and the backend as below, and load history as described under
+[Simulator](#4-simulator).
+
+</details>
+
 `.env` is git-ignored. Every credential (Postgres, MQTT, MinIO, Redis, the JWT signing secret and
-the first admin's password) comes from it. `JWT_SECRET` needs at least 32 characters
-(`openssl rand -base64 48`) and `ADMIN_PASSWORD` at least 10; the backend refuses to start without
-a usable `JWT_SECRET`.
+the first admin's password) comes from it; [docs/configuration.md](docs/configuration.md) lists
+every setting. Set the passwords before the first `docker compose up`: PostgreSQL keeps the
+password its data volume was created with.
 
 ## Start and stop
 
@@ -295,9 +320,14 @@ Fast-forward writes history straight to TimescaleDB instead of publishing live, 
 failures and the maintenance records that reset wear:
 
 ```bash
+# stop the live simulator first (Ctrl+C), and start it again afterwards so it carries on from the new state
 .venv/bin/python simulator.py --fast-forward 90 --replace --seed 42   # 90 days in a few seconds
-curl -X POST localhost:8080/api/admin/reanalyse                       # build trips, events and scores from it
+# build trips, events and scores from it (admin only; TOKEN as under "Backend" above)
+curl -X POST -H "Authorization: Bearer $TOKEN" localhost:8080/api/admin/reanalyse
 ```
+
+`scripts/demo-reset.sh` does all of this, and retrains the models, starting from an empty database
+(it asks first: it deletes the fleet data).
 
 `--replace` first deletes existing telemetry, trips, events and maintenance records inside the
 period; without it the run stops if any exist. The wear each vehicle ends on is saved to
@@ -434,6 +464,12 @@ Every setting and its default is listed in [docs/configuration.md](docs/configur
   `environment.ts`), `uvicorn ... --port 8001`, or `npm start -- --port 4201` (and add the new
   origin to `fleet.cors.allowed-origins` in `application.yml`).
 - **A container stays `unhealthy`**: `docker compose logs <service>`.
+- **A new checkout shows old data, or `password authentication failed` on a machine that ran the
+  project before**: Docker Compose names volumes after the folder (`<folder>_timescale-data`), so a
+  checkout in a folder with the same name picks up the earlier one's database. `docker volume ls`
+  shows them; use a differently named folder, or remove the old volumes if you no longer want them.
+- **Backend fails with `JWT_SECRET still has its example value`**: `.env` still has the
+  `change-me` placeholders. See First-time setup.
 - **Backend fails with `password authentication failed`**: Postgres only reads
   `POSTGRES_PASSWORD` when the data volume is first created. After changing it, run
   `docker compose down -v` (this deletes the data) and start again.
@@ -467,7 +503,7 @@ Every setting and its default is listed in [docs/configuration.md](docs/configur
 - **No remaining-life bars on a vehicle**: the ML service is down or has no RUL models (`curl
   localhost:8000/health` lists them). Fast-forward history and run `training.train_rul`.
 - **Driver scores, trips or fuel figures are empty after a fast-forward**: run
-  `curl -X POST localhost:8080/api/admin/reanalyse`.
+  `curl -X POST -H "Authorization: Bearer $TOKEN" localhost:8080/api/admin/reanalyse` as an admin.
 - **MinIO image**: MinIO no longer publishes official images to Docker Hub or Quay, so compose
   uses the Chainguard build pinned by digest. To upgrade, pull `cgr.dev/chainguard/minio:latest`
   and replace the digest in `infra/docker-compose.yml`.

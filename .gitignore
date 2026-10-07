@@ -39,3 +39,7 @@ simulator/state.json
 # Coverage data
 .coverage
 htmlcov/
+
+# Logs written by setup.sh and scripts/demo-reset.sh
+setup-backend*.log
+simulator/simulator.log
