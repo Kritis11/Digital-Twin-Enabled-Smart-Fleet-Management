@@ -26,7 +26,8 @@ import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE_FILE = Path(__file__).resolve().parent / "state.json"
+# In Docker this points into a volume, so a fast-forward run and the live container share the wear state.
+STATE_FILE = Path(os.getenv("SIM_STATE_FILE", Path(__file__).resolve().parent / "state.json"))
 
 # One depot per seeded vehicle (Bengaluru, Mysuru, Pune, Chennai, Delhi); extra vehicles reuse them.
 DEPOTS = [(12.9716, 77.5946), (12.2958, 76.6394), (18.5204, 73.8567), (13.0827, 80.2707), (28.6139, 77.2090)]

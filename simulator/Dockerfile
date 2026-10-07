@@ -5,8 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY simulator.py .
-# simulator.py keeps its wear state (state.json) next to itself
-RUN chown app /app
+# The wear state carried from a fast-forward into live mode; mount a volume here to keep it.
+RUN mkdir /app/state && chown app /app/state
 USER app
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 SIM_STATE_FILE=/app/state/state.json
 ENTRYPOINT ["python", "simulator.py"]

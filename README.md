@@ -3,7 +3,13 @@
 A digital-twin based predictive fleet maintenance system. Simulated vehicles publish telemetry over
 MQTT; the backend stores it, keeps a live twin of every vehicle, raises alerts from threshold rules
 and from an anomaly model, predicts how long each part has left, scores driving and fuel use, and
-turns all of that into maintenance recommendations. A dashboard shows it in real time.
+turns all of that into maintenance recommendations, and plans delivery routes around the vehicles
+that are fit to drive. A dashboard with role-based logins shows it in real time, and the whole stack
+runs on one server behind HTTPS.
+
+- Running it on a server: [docs/deployment.md](docs/deployment.md)
+- Using the dashboard, by role: [docs/user-guide.md](docs/user-guide.md)
+- What was built in each phase and why: [docs/project-summary.md](docs/project-summary.md)
 
 ## Features
 
@@ -26,39 +32,51 @@ turns all of that into maintenance recommendations. A dashboard shows it in real
 - **Maintenance recommendations**: configurable rules combine RUL, component status, open alerts,
   anomaly history and time or distance since the last service. Each recommendation states its
   evidence in plain English. Completing one records the maintenance and resets the part's wear.
+- **Route optimisation**: give it delivery stops (with optional time windows) and it assigns and
+  orders them per vehicle with Google OR-Tools, using road distances from a self-hosted OSRM and
+  straight-line distances when OSRM cannot help. Vehicles with an urgent recommendation, an open
+  critical alert or a part close to failure are left out, and each exclusion is explained.
+- **Utilisation**: hours on trips, idle time and distance per vehicle and for the fleet, with
+  under- and over-used vehicles flagged.
+- **Logins and roles**: JWT access and refresh tokens, BCrypt passwords, four roles (see
+  [Roles](#roles)), a secured WebSocket, user management and an audit log of who did what.
+- **Reports**: fleet health, maintenance, driver behaviour and fuel for any date range, as PDF or
+  Excel, kept in MinIO with a list of past reports. Optional weekly email.
 - **Dashboard**: fleet map, vehicle twin view with charts and anomaly markers, live alert feed,
-  Maintenance Planner, and a Drivers & Fuel page.
+  Maintenance Planner, Drivers & Fuel with utilisation, Route Planner, Reports, User Management.
+- **Production setup**: Docker images for every service, one compose file behind nginx with
+  Let's Encrypt, scheduled database backups to MinIO, CI on GitHub Actions, Prometheus metrics.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    SIM[Simulator] -- MQTT --> MQ[Mosquitto]
-    SIM -. "--fast-forward: history, failures, maintenance" .-> DB
-    MQ -- fleet/+/telemetry --> BE
-    BE -- "fleet/{id}/maintenance (part serviced)" --> MQ
-    MQ -- wear reset --> SIM
+    UI[Angular dashboard] -- HTTPS --> NG["nginx<br/>TLS, dashboard files"]
+    CB[certbot] -. "Let's Encrypt certificate" .-> NG
+    NG -- "/api and /ws, with JWT" --> BE
+    SIM[Vehicles or simulator] -- "MQTT telemetry" --> MQ[Mosquitto]
+    MQ --> BE
+    BE -. "part serviced" .-> MQ
 
-    subgraph BE[Spring Boot backend]
-        ING[Telemetry ingest] --> TW[Twin + threshold rules + alerts]
-        ING --> DRV[Driving analyzer: events, trips, driver score, fuel]
-        REC[Recommendation engine, every 15 min]
-        MLC[ML client]
-    end
+    BE["Spring Boot backend<br/>logins, roles, audit log<br/>twins, threshold rules, alerts<br/>driving and fuel analysis<br/>maintenance recommendations<br/>route planning, utilisation<br/>PDF and Excel reports"]
+    ML["FastAPI ML service<br/>anomaly and RUL models (XGBoost)<br/>route solver (OR-Tools)"]
 
-    BE -- telemetry, alerts, trips, driving events, recommendations, maintenance --> DB[(TimescaleDB)]
-    BE -- live twins --> RD[(Redis)]
-    MLC -- every 10 s: /anomaly, /health-score --> ML[FastAPI ML service]
-    MLC -- every 60 s: /rul --> ML
-    ML -- daily wear and usage for /rul --> DB
-    ML -- loads latest anomaly and RUL models --> S3[(MinIO)]
-    TR[training/train.py, train_rul.py] -- reads telemetry and maintenance --> DB
-    TR -- uploads versioned models --> S3
-    UI[Angular dashboard] -- REST --> BE
-    BE -- STOMP /topic/twins, /topic/alerts --> UI
+    BE -- "anomaly, health score,<br/>RUL, route optimisation" --> ML
+    ML -- "road distances" --> OSRM["OSRM<br/>OpenStreetMap extract"]
+    BE -- "telemetry, alerts, trips,<br/>recommendations, users" --> DB[(TimescaleDB)]
+    BE -- "live twins" --> RD[(Redis)]
+    BE -- "report files" --> S3[(MinIO)]
+    ML -- "models" --> S3
+    ML -- "wear history" --> DB
+    BK["Backup<br/>scheduled pg_dump"] -- "reads" --> DB
+    BK -- "dumps" --> S3
 ```
 
-More detail in [docs/architecture.md](docs/architecture.md).
+This is the production layout. In development the dashboard talks to the backend directly and
+there is no nginx, certbot or backup container. The training scripts (`ml-service/training`) read
+telemetry and maintenance history from TimescaleDB and upload versioned models to MinIO; the
+simulator's fast-forward mode writes history straight to TimescaleDB. The data path in detail is
+in [docs/architecture.md](docs/architecture.md).
 
 ```
 fleet-twin/
@@ -66,8 +84,10 @@ fleet-twin/
   frontend/     Angular 22
   ml-service/   Python 3.11, FastAPI, XGBoost; training scripts in ml-service/training
   simulator/    Python MQTT telemetry simulator
-  infra/        docker-compose.yml, mosquitto config, db init scripts
-  docs/         architecture notes, model report, driver score formula
+  infra/        development docker-compose.yml, mosquitto config, db init, backup image, Prometheus config
+  docs/         architecture, deployment, user guide, project summary, model report, driver score formula
+  docker-compose.prod.yml   the whole stack for one server (see docs/deployment.md)
+  .github/workflows/ci.yml  tests on every push, image builds on main
 ```
 
 ## Prerequisites
@@ -90,27 +110,34 @@ fleet-twin/
 | 1883 | Mosquitto (MQTT) |
 | 9000 / 9001 | MinIO API / console |
 | 6379 | Redis |
+| 5001 | OSRM (5000 inside Docker; 5000 on a Mac belongs to AirPlay) |
 | 8080 | Backend |
 | 8000 | ML service |
 | 4200 | Frontend |
 
-The four infra ports can be changed in `.env` (`POSTGRES_PORT`, `MQTT_PORT`, `MINIO_API_PORT`,
-`MINIO_CONSOLE_PORT`, `REDIS_PORT`); the backend and simulator read the same file.
+These are the development ports. The infra ports can be changed in `.env` (`POSTGRES_PORT`,
+`MQTT_PORT`, `MINIO_API_PORT`, `MINIO_CONSOLE_PORT`, `REDIS_PORT`, `OSRM_PORT`); the backend and
+simulator read the same file. In production only 80 and 443 (nginx) are published, plus 8883 if
+MQTT over TLS is switched on.
 
 ## First-time setup
 
 ```bash
-cp .env.example .env          # then change the passwords
+cp .env.example .env          # then change the passwords, JWT_SECRET and ADMIN_PASSWORD
 (cd ml-service && python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt)
 (cd simulator  && python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt)
 (cd frontend   && npm ci)
 ```
 
-`.env` is git-ignored. Every credential (Postgres, MQTT, MinIO, Redis) comes from it.
+`.env` is git-ignored. Every credential (Postgres, MQTT, MinIO, Redis, the JWT signing secret and
+the first admin's password) comes from it. `JWT_SECRET` needs at least 32 characters
+(`openssl rand -base64 48`) and `ADMIN_PASSWORD` at least 10; the backend refuses to start without
+a usable `JWT_SECRET`.
 
 ## Start and stop
 
-Run each part in its own terminal, in this order.
+Run each part in its own terminal, in this order. This is the development setup; for a server see
+[docs/deployment.md](docs/deployment.md).
 
 ### 1. Infrastructure
 
@@ -120,6 +147,15 @@ docker compose ps             # every service should say "healthy"
 docker compose down           # stop, keep data
 docker compose down -v        # stop and delete all data volumes
 ```
+
+The first start also downloads the OpenStreetMap extract named by `OSRM_PBF_URL` (Karnataka, 130 MB)
+and prepares it for routing, which takes a minute or two and about 4 GB of memory. To use another
+region, put the URL of any `.osm.pbf` extract (for example from
+[download.geofabrik.de](https://download.geofabrik.de) or
+[download.openstreetmap.fr/extracts](https://download.openstreetmap.fr/extracts/)) in `OSRM_PBF_URL`
+and run `docker compose up -d` again: the container notices the change and prepares the new region.
+Larger regions need more memory and time. Stops or vehicles outside the region still get a route,
+from straight-line distances.
 
 ### 2. Backend
 
@@ -131,7 +167,19 @@ mvn spring-boot:run           # Ctrl+C to stop
 - Health: http://localhost:8080/actuator/health
 - Swagger UI: http://localhost:8080/swagger-ui.html
 - Flyway creates the schema and seeds 5 vehicles (ids 1–5) on first start.
+- The first start also creates the admin user from `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Later
+  changes to those two variables do nothing; manage users in the dashboard.
 - Must be started from `backend/` so it finds `../.env`.
+
+Every endpoint except login, refresh and `/actuator/health` needs an access token:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8080/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<ADMIN_PASSWORD>"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["accessToken"])')
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/vehicles
+```
+
+In Swagger UI, click **Authorize** and paste the token.
 
 | Endpoint | Purpose |
 |---|---|
@@ -150,16 +198,43 @@ mvn spring-boot:run           # Ctrl+C to stop
 | `PATCH /api/recommendations/{id}` | Body `{"status": "SCHEDULED" \| "DONE" \| "DISMISSED" \| "OPEN"}`. `DONE` creates a maintenance record, resets the part's wear in the twin and tells the simulator |
 | `POST /api/recommendations/recompute` | Run the recommendation rules now |
 | `POST /api/admin/reanalyse?from=&to=` | Rebuild trips and events from stored telemetry (needed after a fast-forward) |
-| WebSocket `ws://localhost:8080/ws` (STOMP) | `/topic/twins` gets every twin update, `/topic/alerts` every new or acknowledged alert |
+| `POST /api/routes/optimise` | Body `{ stops: [{name, lat, lng, windowStart?, windowEnd?, serviceMinutes?}], vehicleIds?, depot?: {lat, lng}, departAt?, returnToStart?, maxStopsPerVehicle? }`. Returns an ordered route per vehicle with arrival times, distance, time, estimated fuel and the line to draw; `excluded` vehicles with reasons; `unassigned` stops; and whether distances came from `osrm` or `straight-line` |
+| `GET /api/fleet/utilisation?period=` | Active hours, idle hours, distance and utilisation per vehicle and for the fleet; `usage` is `UNDER_USED`, `NORMAL` or `OVER_USED` |
+| `GET /api/vehicles/{id}/routes?period=` | Route history: per day, where the vehicle started and ended, distance, driving time, stops, events and fuel |
+| `POST /api/reports` | Body `{ type: FLEET_HEALTH \| MAINTENANCE \| DRIVER_BEHAVIOUR \| FUEL, format: PDF \| XLSX, from, to }` (dates, `to` inclusive). Generates the file, stores it in MinIO and returns its entry |
+| `GET /api/reports`, `GET /api/reports/{id}/download` | Past reports, newest first; download one |
+| `POST /api/auth/login`, `/refresh`, `/logout`, `GET /api/auth/me` | Log in with `{username, password}` for `{accessToken, refreshToken, expiresIn, username, role}`; trade a refresh token for a new pair; end all of the user's sessions; who am I |
+| `GET/POST /api/users`, `PATCH /api/users/{id}` | Admin: list and create users; change role, enable or disable, reset password |
+| `GET /api/audit-log?limit=` | Admin: who acknowledged, completed, dismissed, created or changed what, newest first |
+| `GET /api/admin/settings` | Admin: the thresholds, weights and schedules in force |
+| WebSocket `ws://localhost:8080/ws` (STOMP) | `/topic/twins` gets every twin update, `/topic/alerts` every new or acknowledged alert. The `CONNECT` frame must carry `Authorization: Bearer <access token>` |
 
 Everything tunable is in `backend/src/main/resources/application.yml` under `fleet`:
 component threshold rules (`fleet.rules`), the offline timeout and moving speed (`fleet.twin`),
 the ML service URL, scoring and RUL intervals, window and timeout (`fleet.ml`), driving event
 thresholds and driver score weights (`fleet.driving`), fuel anomaly thresholds (`fleet.fuel`),
-and the recommendation schedule, priority rules, due dates and per-component actions
-(`fleet.recommendations`). If the ML service is down the backend logs one warning per cycle and
+the recommendation schedule, priority rules, due dates and per-component actions
+(`fleet.recommendations`), route planning (`fleet.routes`: the minimum remaining life for a route,
+how much fuel efficiency and driver score count, how hard routes are balanced, solver time),
+utilisation bands (`fleet.utilisation`), token lifetimes and password length (`fleet.security`)
+and report settings (`fleet.reports`). If the ML service is down the backend logs one warning per cycle and
 carries on: statuses, alerts, driver scores, fuel analysis and recommendations need only the
-database (recommendations then lose their RUL evidence and use the rest).
+database (recommendations then lose their RUL evidence and use the rest). Route optimisation is the
+exception: the solver lives in the ML service, so it answers 503 until that is back.
+
+### Roles
+
+| Role | Can do |
+|---|---|
+| `ADMIN` | Everything, including user management, the audit log and viewing the settings in force |
+| `FLEET_MANAGER` | Every dashboard, route planning, recommendations, alerts, maintenance records, reports |
+| `TECHNICIAN` | Vehicles, alerts, maintenance records and recommendations (read and write); no fleet analysis, routes or reports |
+| `VIEWER` | Read-only: sees what a fleet manager sees, including past reports, and can change nothing |
+
+The rules are in one place, `SecurityConfig`, and are tested in `SecurityRulesTest`. Access tokens
+last 15 minutes and refresh tokens 7 days (`fleet.security`). Logging out, or any change to a
+user, ends that user's refresh tokens; an access token already issued keeps working until it
+expires. Thresholds are shown to admins but changed in `application.yml`, followed by a restart.
 
 ### 3. ML service
 
@@ -178,6 +253,7 @@ return 503 and the backend falls back to health scores from component statuses a
 | `POST /anomaly` | Takes one vehicle's recent readings (ideally the last 2 minutes), scores the newest. Returns `{ vehicle_id, is_anomaly, score, reasons[], model_version }` |
 | `POST /health-score` | 100 minus 10 per WARNING component, 25 per CRITICAL component and 30 × anomaly score, floored at 0. Returns the score and the deductions |
 | `POST /model/reload` | Load the newest models from MinIO without restarting |
+| `POST /optimise-routes` | Vehicle routing with OR-Tools: vehicles (start point, cost factor), stops (optional time window in seconds after departure, service time), returns ordered stops per vehicle, distance, duration and geometry. Uses OSRM at `OSRM_URL` (default `http://localhost:5001`), falling back to straight lines |
 | `POST /rul` | Takes `{ vehicle_id, component }` (`brakes`, `battery`, `tyres` or `engine`), reads that vehicle's history from TimescaleDB. Returns `{ vehicle_id, component, rul_days, lower_bound, upper_bound, confidence, model_version }` |
 
 ```bash
@@ -192,9 +268,10 @@ curl -X POST localhost:8000/rul -H 'Content-Type: application/json' \
 
 The health score weights are env vars (`HEALTH_WARNING_PENALTY`, `HEALTH_CRITICAL_PENALTY`,
 `HEALTH_ANOMALY_WEIGHT`), as are `MINIO_ENDPOINT`, `MODEL_BUCKET`, `RUL_HISTORY_DAYS` and
-`RUL_CACHE_SECONDS`. `/rul` needs the `POSTGRES_*` settings from `.env`. To run it as a container, give
-it the MinIO settings: `docker build -t fleet-twin-ml ml-service && docker run --rm -p 8000:8000
---env-file .env -e MINIO_ENDPOINT=host.docker.internal:9000 fleet-twin-ml`.
+`RUL_CACHE_SECONDS`, and for routing `OSRM_URL`, `OSRM_MAX_SNAP_M`, `ROUTE_FALLBACK_SPEED_KMH` and
+`ROUTE_FALLBACK_DETOUR`. `/rul` needs the `POSTGRES_*` settings from `.env`. The service has no
+login of its own: only the backend should be able to reach it, which is how the production
+compose file runs it.
 
 ### 4. Simulator
 
@@ -241,6 +318,9 @@ cd frontend
 npm start                     # http://localhost:4200, Ctrl+C to stop
 ```
 
+Sign in with the admin from `.env`, then add other users under User Management. What each role
+sees is described in [docs/user-guide.md](docs/user-guide.md).
+
 - **Fleet Overview**: map with one marker per vehicle (arrow = heading; green / amber / red =
   health; faded = offline), summary cards, and a vehicle list. Click a vehicle to open it.
   Cards for urgent recommendations and the part with the lowest remaining life in the fleet.
@@ -252,9 +332,15 @@ npm start                     # http://localhost:4200, Ctrl+C to stop
 - **Alerts**: live feed with filters and an acknowledge button.
 - **Maintenance Planner**: every recommendation by priority and date, filters for status,
   priority and vehicle, and Schedule / Complete / Dismiss buttons.
-- **Drivers & Fuel**: driver score ranking, fuel efficiency comparison and idling cost.
+- **Drivers & Fuel**: driver score ranking, fuel efficiency comparison, idling cost and utilisation.
+- **Route Planner**: click the map to add stops, optionally set a depot and time windows, optimise,
+  and see a coloured route per vehicle with a summary table and the vehicles that were left out.
+- **Reports**: generate a report for a date range as PDF or Excel, download it, browse past ones.
+- **User Management** (admin): users, roles, the audit log and the settings in force.
 
-The sidebar shows "Live" while the WebSocket is connected. Backend and WebSocket URLs, the health
+The sidebar shows "Live" while the WebSocket is connected. Backend and WebSocket URLs are in
+`frontend/src/environments/environment.ts` (development) and `environment.prod.ts` (relative URLs
+behind nginx). The health
 colour bands, the remaining-life colour bands, the refresh intervals and the map tiles are in
 `frontend/src/environments/settings.ts`.
 
@@ -303,10 +389,14 @@ The baseline numbers, the interval method and the caveats are in
 ## Tests
 
 ```bash
-(cd backend && mvn test)                                   # payload parsing, threshold rules, alert de-duplication, driving and fuel analysis, recommendation rules
-(cd ml-service && .venv/bin/python -m pytest)              # feature pipeline, /anomaly, /health-score, RUL features and /rul
+(cd backend && mvn test)                                   # payload parsing, threshold rules, alert de-duplication, driving and fuel analysis, recommendation rules, route eligibility, utilisation, access rules per role, report rendering
+(cd ml-service && .venv/bin/python -m pytest)              # feature pipeline, /anomaly, /health-score, RUL features and /rul, route optimisation
 (cd simulator && .venv/bin/python simulator.py --self-check)
 ```
+
+None of them needs the database or any other service. GitHub Actions (`.github/workflows/ci.yml`)
+runs the same three commands plus the frontend build and a check of the compose files on every
+push, and builds the five Docker images on `main`.
 
 ## Troubleshooting
 
@@ -329,6 +419,19 @@ The baseline numbers, the interval method and the caveats are in
   instead (use the next free version number), or reset the dev database with `docker compose down -v`.
 - **Simulator runs but the row count doesn't grow**: check the backend is running and look for
   `Dropped telemetry` in its log (unknown vehicle id or malformed JSON).
+- **Backend fails with `Could not resolve placeholder 'JWT_SECRET'`** or says it must be at least
+  32 characters: add `JWT_SECRET` to `.env` (see `.env.example`).
+- **Nobody can log in / backend logs `There are no users and ADMIN_USERNAME / ADMIN_PASSWORD are
+  not set`**: set both in `.env` and restart the backend. They only work while there are no users.
+- **Every request answers 401 after a backend restart with a new `JWT_SECRET`**: old tokens no
+  longer verify. Log in again.
+- **Route Planner says distances are a straight-line estimate**: OSRM is still preparing its map
+  (`docker compose logs osrm`), is down, or a stop or vehicle is outside its region. The note under
+  the routes says which.
+- **Route Planner says no vehicle is fit to be assigned**: every vehicle has an urgent
+  recommendation, an open critical alert or a part under `fleet.routes.min-rul-days`. The reasons
+  are listed; acknowledging alerts and completing recommendations frees vehicles up.
+- **Report generation answers 503**: MinIO is unreachable (`docker compose ps`).
 - **Frontend shows "Cannot reach the backend"**: the backend is down, or the page is served from an
   origin other than `http://localhost:4200` (CORS).
 - **`XGBoost Library (libxgboost.dylib) could not be loaded`** (macOS): `brew install libomp`.

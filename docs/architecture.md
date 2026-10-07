@@ -24,9 +24,18 @@ simulator ──MQTT──▶ Mosquitto ──fleet/+/telemetry──▶ backend
 recommendation marked DONE ──▶ maintenance_record + wear reset in twin ──MQTT fleet/{id}/maintenance──▶ simulator
 simulator --fast-forward ──▶ TimescaleDB directly (telemetry + maintenance_records), then POST /api/admin/reanalyse
 
+POST /api/routes/optimise ──▶ backend: drop unfit vehicles, weigh the rest ──▶ ml-service /optimise-routes
+                              ──▶ OSRM table (or straight lines) ──▶ OR-Tools ──▶ routes back, fuel estimated
+
+POST /api/reports ──▶ SQL + twins ──▶ one report model ──▶ PDF or Excel ──▶ MinIO, row in `reports`
+
 ml-service ◀── newest models ── MinIO ◀── training/train.py, train_rul.py ◀── TimescaleDB
 ml-service /rul ── reads the vehicle's daily wear and usage ── TimescaleDB
 frontend ── REST (initial load, history) + STOMP (/topic/twins, /topic/alerts) ── backend
+            every request and the STOMP CONNECT frame carry a JWT access token
+
+production: browser ──HTTPS──▶ nginx (static dashboard, /api, /ws) ──▶ backend; nothing else is published
+            backup container ── pg_dump every BACKUP_INTERVAL_HOURS ──▶ MinIO bucket `backups`
 ```
 
 ## Decisions
@@ -75,9 +84,38 @@ frontend ── REST (initial load, history) + STOMP (/topic/twins, /topic/alert
   There is at most one active recommendation per vehicle and component, updated in place.
 - **Driver score, fuel efficiency and recommendations do not need the ML service**; with it down,
   recommendations simply lack RUL evidence.
-- **Credentials live only in the root `.env`**. Compose, the backend, the ML service and the
-  simulator all read it. The Mosquitto password file is generated from it at container start.
-- **Security permits everything** for now; CORS and the WebSocket allow only `http://localhost:4200`.
+- **The route solver sits in the ML service**, next to the other Python numerics, and knows nothing
+  about vehicle health. The backend decides who may drive and passes each remaining vehicle a
+  cost factor; that keeps the exclusion rules explainable, configurable and unit-tested in one place.
+- **Unfit vehicles are excluded, not just penalised.** An urgent recommendation, an open critical
+  alert or a part under the RUL threshold is a reason not to send the vehicle at all. Fuel
+  efficiency and driver score only tilt the choice among the fit ones.
+- **A stop that cannot be reached in its time window is reported, not fatal.** Every stop can be
+  dropped at a very high cost, so the solver still plans the rest.
+- **OSRM is optional at run time.** If it is down, still preparing, or a point is outside its map,
+  the matrix falls back to straight-line distance times a detour factor, and the response says so.
+- **Tokens are our own HS256 JWTs, checked by Spring's resource-server support.** Access tokens
+  are short and carry the role, so no database lookup is needed per request. Refresh tokens carry
+  the user's token version; logout and any change to the user raise it, which revokes them. The
+  cost is that a disabled user's access token keeps working for up to 15 minutes.
+- **Access rules are URL rules in `SecurityConfig`**, not annotations spread over controllers, so
+  the whole matrix can be read and tested in one place.
+- **The WebSocket is authenticated on the STOMP CONNECT frame**, because browsers cannot add a
+  header to the WebSocket handshake. Nothing else is accepted on a session before a valid CONNECT.
+- **The audit log stores the username as text**, not a foreign key, so it survives changes to users.
+- **Both report formats come from one intermediate model** (title, sections, notes, table), so a
+  PDF and an Excel file of the same report cannot disagree.
+- **Report files live in MinIO, the list of them in PostgreSQL.**
+- **In production actuator has its own port (8081)** that is not published and not proxied by
+  nginx; Prometheus scrapes it inside the Docker network. On the API port everything but the
+  health check needs an admin token.
+- **nginx resolves the backend at request time** (Docker DNS), so it starts without the backend
+  and follows it when the container is replaced during an update.
+- **Credentials live only in `.env` (development) or `.env.prod` (production)**, both git-ignored.
+  The Mosquitto password file is generated from them at container start. The first admin comes
+  from `ADMIN_USERNAME` / `ADMIN_PASSWORD` and is never in a migration.
+- **CORS and the WebSocket allow one origin**: `http://localhost:4200` in development,
+  `https://$DOMAIN` in production.
 
 ## Not built yet
 
@@ -85,6 +123,11 @@ frontend ── REST (initial load, history) + STOMP (/topic/twins, /topic/alert
 - Named drivers: scores are per vehicle, which assumes one driver per vehicle.
 - Real speed limits and road data: speeding uses one fleet-wide limit, cornering comes from
   heading change between readings.
-- Authentication and per-vehicle MQTT ACLs.
+- Per-vehicle MQTT credentials and ACLs: all devices share one MQTT username and password.
+- Editing thresholds from the dashboard: admins can see them, but they are changed in
+  `application.yml` and need a restart.
+- Vehicle capacities (weight, volume) in route optimisation, and live traffic.
+- Off-server copies of backups: dumps go to MinIO on the same machine (see docs/deployment.md).
+- Named-driver logins, password reset by email, two-factor authentication.
 - TimescaleDB compression and retention policies.
 - Running more than one backend instance (see the twin locking note above).

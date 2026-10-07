@@ -3,6 +3,10 @@ package com.fleettwin.config;
 import java.util.List;
 
 import com.fleettwin.auth.TokenService;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -89,6 +93,15 @@ public class SecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(roles);
         return converter;
+    }
+
+    /** Gives Swagger UI an Authorize button that sends the access token with every request. */
+    @Bean
+    OpenAPI openApi() {
+        return new OpenAPI()
+                .components(new Components().addSecuritySchemes("bearer",
+                        new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList("bearer"));
     }
 
     @Bean

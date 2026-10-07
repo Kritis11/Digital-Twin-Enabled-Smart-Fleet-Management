@@ -228,6 +228,7 @@ services:
       minio: { condition: service_healthy }
 
   # Simulated vehicles, for demos: docker compose ... --profile demo up -d
+  # 90 days of history first:  docker compose ... --profile demo run --rm simulator --fast-forward 90
   simulator:
     <<: *service
     profiles: [demo]
@@ -241,6 +242,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       SIM_FAULT_RATE: ${SIM_FAULT_RATE:-0.02}
+    volumes:
+      - simulator-state:/app/state
     depends_on:
       backend: { condition: service_healthy }
 
@@ -278,6 +281,7 @@ volumes:
   minio-data:
   redis-data:
   osrm-data:
+  simulator-state:
   certs:
   letsencrypt:
   certbot-www:
