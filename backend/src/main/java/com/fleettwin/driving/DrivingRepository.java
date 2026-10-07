@@ -3,6 +3,7 @@ package com.fleettwin.driving;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -167,7 +168,7 @@ public class DrivingRepository {
     }
 
     public Map<String, Long> eventCounts(long vehicleId, Instant since) {
-        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        Map<String, Long> counts = new LinkedHashMap<>();
         jdbc.query("SELECT type, count(*) FROM driving_events WHERE vehicle_id = ? AND ts >= ? GROUP BY type ORDER BY type",
                 rs -> {
                     counts.put(rs.getString(1), rs.getLong(2));

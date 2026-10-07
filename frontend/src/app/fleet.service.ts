@@ -140,10 +140,24 @@ export interface OptimiseResult {
 export interface Utilisation {
   availableHoursPerVehicle: number;
   vehicles: {
-    vehicleId: number; registration: string; trips: number; activeHours: number; idleHours: number;
-    idleShare: number | null; distanceKm: number; utilisation: number; usage: 'UNDER_USED' | 'NORMAL' | 'OVER_USED';
+    vehicleId: number;
+    registration: string;
+    trips: number;
+    activeHours: number;
+    idleHours: number;
+    idleShare: number | null;
+    distanceKm: number;
+    utilisation: number;
+    usage: 'UNDER_USED' | 'NORMAL' | 'OVER_USED';
   }[];
-  fleet: { activeHours: number; idleHours: number; distanceKm: number; utilisation: number | null; underUsed: string[]; overUsed: string[] };
+  fleet: {
+    activeHours: number;
+    idleHours: number;
+    distanceKm: number;
+    utilisation: number | null;
+    underUsed: string[];
+    overUsed: string[];
+  };
 }
 
 export type Period = '24h' | '7d' | '30d' | '90d';
@@ -320,7 +334,9 @@ export class FleetService {
   }
 
   recomputeRecommendations(): Observable<unknown> {
-    return this.http.post(`${this.api}/api/recommendations/recompute`, null).pipe(tap(() => this.loadRecommendations()));
+    return this.http
+      .post(`${this.api}/api/recommendations/recompute`, null)
+      .pipe(tap(() => this.loadRecommendations()));
   }
 
   driverScore(vehicleId: number, period: Period): Observable<DriverScore> {

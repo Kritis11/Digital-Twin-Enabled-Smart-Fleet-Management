@@ -259,8 +259,9 @@ def rul(req: RulRequest) -> RulResponse:
     if daily.empty:
         raise HTTPException(status_code=404, detail="no telemetry with wear data for this vehicle")
     prediction = model.predict_latest(daily, maintenance)
-    return RulResponse(vehicle_id=req.vehicle_id, component=req.component,
-                       model_version=model.config["version"], **prediction)
+    return RulResponse(
+        vehicle_id=req.vehicle_id, component=req.component, model_version=model.config["version"], **prediction
+    )
 
 
 @app.post("/optimise-routes")
@@ -269,9 +270,15 @@ def optimise_routes(req: OptimiseRequest) -> OptimiseResponse:
     points = [(p.lat, p.lng) for p in [*req.vehicles, *req.stops]]
     dist, dur, source, note = routing.matrix(points)
     routes, unassigned = routing.solve(
-        [v.model_dump() for v in req.vehicles], [s.model_dump() for s in req.stops], dist, dur,
-        return_to_start=req.return_to_start, balance=req.balance,
-        max_stops_per_vehicle=req.max_stops_per_vehicle, time_limit_s=req.time_limit_s)
+        [v.model_dump() for v in req.vehicles],
+        [s.model_dump() for s in req.stops],
+        dist,
+        dur,
+        return_to_start=req.return_to_start,
+        balance=req.balance,
+        max_stops_per_vehicle=req.max_stops_per_vehicle,
+        time_limit_s=req.time_limit_s,
+    )
     for route in routes:
         route["geometry"] = routing.geometry([points[n] for n in route.pop("nodes")], source)
     return OptimiseResponse(routes=routes, unassigned=unassigned, distance_source=source, note=note)

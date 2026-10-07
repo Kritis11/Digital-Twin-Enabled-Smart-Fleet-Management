@@ -7,6 +7,7 @@ import java.util.Map;
 import com.fleettwin.auth.AuditService;
 import com.fleettwin.recommendation.Recommendation.Priority;
 import com.fleettwin.recommendation.Recommendation.State;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,7 +47,7 @@ public class RecommendationController {
 
     /** {"status": "SCHEDULED" | "DONE" | "DISMISSED" | "OPEN"}. DONE also records the maintenance and resets the part. */
     @PatchMapping("/{id}")
-    public Recommendation update(@PathVariable long id, @jakarta.validation.Valid @RequestBody StatusChange change) {
+    public Recommendation update(@PathVariable long id, @Valid @RequestBody StatusChange change) {
         Recommendation r = service.transition(id, change.status());
         String action = switch (r.getStatus()) {
             case DONE -> "COMPLETE";

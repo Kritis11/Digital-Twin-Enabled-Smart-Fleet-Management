@@ -1,5 +1,6 @@
 package com.fleettwin.auth;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -16,7 +17,7 @@ public record SecurityProperties(String jwtSecret, Duration accessTokenTtl, Dura
     static final String PLACEHOLDER = "change-me";
 
     public SecurityProperties {
-        if (jwtSecret == null || jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
+        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalArgumentException("JWT_SECRET must be set to at least 32 characters (e.g. openssl rand -base64 48)");
         }
         if (jwtSecret.startsWith(PLACEHOLDER)) {

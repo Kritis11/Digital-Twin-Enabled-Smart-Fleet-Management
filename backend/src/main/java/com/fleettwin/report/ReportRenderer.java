@@ -3,6 +3,7 @@ package com.fleettwin.report;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 
@@ -136,7 +137,7 @@ public final class ReportRenderer {
         if (value == null) {
             return "–";
         }
-        if (value instanceof Double || value instanceof Float || value instanceof java.math.BigDecimal) {
+        if (value instanceof Double || value instanceof Float || value instanceof BigDecimal) {
             return String.format(Locale.ROOT, "%,.2f", ((Number) value).doubleValue());
         }
         return value.toString();

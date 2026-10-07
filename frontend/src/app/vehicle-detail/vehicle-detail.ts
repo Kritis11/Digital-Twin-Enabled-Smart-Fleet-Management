@@ -25,7 +25,13 @@ const CHARTS = [
 
 /** Tile label plus the readings shown on it ([sensor, unit]), per twin component. */
 const TILES: Record<string, { label: string; readings: [string, string][] }> = {
-  engine: { label: 'Engine', readings: [['engineTemp', '°C'], ['vibration', 'g']] },
+  engine: {
+    label: 'Engine',
+    readings: [
+      ['engineTemp', '°C'],
+      ['vibration', 'g'],
+    ],
+  },
   battery: { label: 'Battery', readings: [['batteryVoltage', 'V']] },
   brakes: { label: 'Brakes', readings: [['brakePadWear', '% worn']] },
   tyre_fl: { label: 'Tyre front left', readings: [['tyrePressureFl', 'psi']] },
@@ -99,9 +105,7 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
             }
           </div>
         </div>
-        <p class="muted legend">
-          <span class="mark ml"></span> ML anomaly <span class="mark rule"></span> rule alert
-        </p>
+        <p class="muted legend"><span class="mark ml"></span> ML anomaly <span class="mark rule"></span> rule alert</p>
         @if (chartError()) {
           <p class="error" role="alert">Could not load telemetry history. Retrying…</p>
         }
@@ -121,13 +125,17 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
       <section class="panel">
         <h2>Maintenance history</h2>
         @if (fleet.canWrite()) {
-        <form class="filters" (ngSubmit)="addRecord()">
-          <label>Type <input name="type" [(ngModel)]="type" required maxlength="50" placeholder="e.g. Oil change" /></label>
-          <label>Performed <input name="performedAt" type="datetime-local" [(ngModel)]="performedAt" required /></label>
-          <label>Cost <input name="cost" type="number" min="0" step="0.01" [(ngModel)]="cost" /></label>
-          <label class="grow">Description <input name="description" [(ngModel)]="description" /></label>
-          <button type="submit" [disabled]="saving() || !type() || !performedAt()">Add record</button>
-        </form>
+          <form class="filters" (ngSubmit)="addRecord()">
+            <label
+              >Type <input name="type" [(ngModel)]="type" required maxlength="50" placeholder="e.g. Oil change"
+            /></label>
+            <label
+              >Performed <input name="performedAt" type="datetime-local" [(ngModel)]="performedAt" required
+            /></label>
+            <label>Cost <input name="cost" type="number" min="0" step="0.01" [(ngModel)]="cost" /></label>
+            <label class="grow">Description <input name="description" [(ngModel)]="description" /></label>
+            <button type="submit" [disabled]="saving() || !type() || !performedAt()">Add record</button>
+          </form>
         }
         @if (maintenanceError(); as message) {
           <p class="error" role="alert">{{ message }}</p>
@@ -139,7 +147,14 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
         } @else {
           <div class="scroll">
             <table>
-              <thead><tr><th>Performed</th><th>Type</th><th>Description</th><th>Cost</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Performed</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Cost</th>
+                </tr>
+              </thead>
               <tbody>
                 @for (record of records(); track record.id) {
                   <tr>

@@ -1,13 +1,16 @@
 import pytest
-from fastapi.testclient import TestClient
-
 from app import main, routing
+from fastapi.testclient import TestClient
 
 # Two clusters about 30 km apart, with one vehicle parked in each.
 WEST, EAST = (12.90, 77.40), (12.90, 77.70)
 VEHICLES = [{"id": 1, "lat": WEST[0], "lng": WEST[1]}, {"id": 2, "lat": EAST[0], "lng": EAST[1]}]
-STOPS = [{"id": 10, "lat": 12.91, "lng": 77.41}, {"id": 11, "lat": 12.92, "lng": 77.42},
-         {"id": 20, "lat": 12.91, "lng": 77.71}, {"id": 21, "lat": 12.92, "lng": 77.72}]
+STOPS = [
+    {"id": 10, "lat": 12.91, "lng": 77.41},
+    {"id": 11, "lat": 12.92, "lng": 77.42},
+    {"id": 20, "lat": 12.91, "lng": 77.71},
+    {"id": 21, "lat": 12.92, "lng": 77.72},
+]
 
 
 @pytest.fixture

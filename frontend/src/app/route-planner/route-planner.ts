@@ -20,8 +20,8 @@ interface PlannedStop {
   template: `
     <h1>Route Planner</h1>
     <p class="muted">
-      Click the map to add delivery stops, then optimise. Vehicles with an urgent recommendation, an open critical
-      alert or a part close to failure are left out, and the reason is shown.
+      Click the map to add delivery stops, then optimise. Vehicles with an urgent recommendation, an open critical alert
+      or a part close to failure are left out, and the reason is shown.
     </p>
 
     <div class="panel map" #map aria-label="Route map"></div>
@@ -54,7 +54,14 @@ interface PlannedStop {
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>#</th><th>Name</th><th>Position</th><th>Arrive from</th><th>Arrive by</th><th></th></tr>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Position</th>
+                <th>Arrive from</th>
+                <th>Arrive by</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               @for (stop of stops(); track $index; let i = $index) {
@@ -62,8 +69,16 @@ interface PlannedStop {
                   <td>{{ i + 1 }}</td>
                   <td><input [(ngModel)]="stop.name" [attr.aria-label]="'Name of stop ' + (i + 1)" /></td>
                   <td class="nowrap">{{ stop.lat | number: '1.4-4' }}, {{ stop.lng | number: '1.4-4' }}</td>
-                  <td><input type="time" [(ngModel)]="stop.from" [attr.aria-label]="'Earliest arrival at stop ' + (i + 1)" /></td>
-                  <td><input type="time" [(ngModel)]="stop.to" [attr.aria-label]="'Latest arrival at stop ' + (i + 1)" /></td>
+                  <td>
+                    <input
+                      type="time"
+                      [(ngModel)]="stop.from"
+                      [attr.aria-label]="'Earliest arrival at stop ' + (i + 1)"
+                    />
+                  </td>
+                  <td>
+                    <input type="time" [(ngModel)]="stop.to" [attr.aria-label]="'Latest arrival at stop ' + (i + 1)" />
+                  </td>
                   <td><button type="button" (click)="removeStop(i)">Remove</button></td>
                 </tr>
               }
@@ -90,26 +105,37 @@ interface PlannedStop {
           <p class="error">{{ r.note ?? 'No vehicle is fit to be assigned.' }}</p>
         } @else if (!r.routes.length) {
           <p class="error">
-            No route could be planned: none of the stops can be reached within a day's driving or inside its time window.
+            No route could be planned: none of the stops can be reached within a day's driving or inside its time
+            window.
           </p>
         } @else {
           <p>
-            {{ r.totalDistanceKm | number: '1.0-1' }} km and about {{ r.totalFuelLitres | number: '1.0-1' }} l of fuel in total,
-            leaving {{ r.departAt | date: 'HH:mm' }}.
+            {{ r.totalDistanceKm | number: '1.0-1' }} km and about {{ r.totalFuelLitres | number: '1.0-1' }} l of fuel
+            in total, leaving {{ r.departAt | date: 'HH:mm' }}.
             <span class="muted">
               Distances: {{ r.distanceSource === 'osrm' ? 'by road (OSRM)' : 'straight-line estimate' }}.
-              @if (r.note) { {{ r.note }} }
+              @if (r.note) {
+                {{ r.note }}
+              }
             </span>
           </p>
           <div class="scroll">
             <table>
               <thead>
-                <tr><th>Vehicle</th><th>Stops in order</th><th>Distance</th><th>Time</th><th>Est. fuel</th></tr>
+                <tr>
+                  <th>Vehicle</th>
+                  <th>Stops in order</th>
+                  <th>Distance</th>
+                  <th>Time</th>
+                  <th>Est. fuel</th>
+                </tr>
               </thead>
               <tbody>
                 @for (route of r.routes; track route.vehicleId; let i = $index) {
                   <tr>
-                    <td class="nowrap"><span class="dot" [style.background]="colour(i)"></span>{{ route.registration }}</td>
+                    <td class="nowrap">
+                      <span class="dot" [style.background]="colour(i)"></span>{{ route.registration }}
+                    </td>
                     <td>
                       @for (visit of route.stops; track visit.stop; let last = $last) {
                         {{ visit.name || 'Stop ' + (visit.stop + 1) }}
@@ -137,7 +163,10 @@ interface PlannedStop {
           <h3>Vehicles left out</h3>
           <ul class="plain">
             @for (x of r.excluded; track x.vehicleId) {
-              <li><strong>{{ x.registration }}</strong>: {{ x.reasons.join('; ') }}</li>
+              <li>
+                <strong>{{ x.registration }}</strong
+                >: {{ x.reasons.join('; ') }}
+              </li>
             }
           </ul>
         }
@@ -205,11 +234,18 @@ export class RoutePlanner {
     this.error.set(null);
     this.fleet
       .optimiseRoutes({
-        vehicleIds: this.fleet.twins().map((t) => t.id).filter((id) => !this.skipped().has(id)),
+        vehicleIds: this.fleet
+          .twins()
+          .map((t) => t.id)
+          .filter((id) => !this.skipped().has(id)),
         depot: this.depot(),
         returnToStart: this.returnToStart(),
         stops: this.stops().map((s) => ({
-          name: s.name, lat: s.lat, lng: s.lng, windowStart: todayAt(s.from), windowEnd: todayAt(s.to),
+          name: s.name,
+          lat: s.lat,
+          lng: s.lng,
+          windowStart: todayAt(s.from),
+          windowEnd: todayAt(s.to),
         })),
       })
       .subscribe({
@@ -229,7 +265,10 @@ export class RoutePlanner {
       this.depot.set({ lat: at.lat, lng: at.lng });
       this.placingDepot.set(false);
     } else {
-      this.stops.update((list) => [...list, { name: `Stop ${list.length + 1}`, lat: at.lat, lng: at.lng, from: '', to: '' }]);
+      this.stops.update((list) => [
+        ...list,
+        { name: `Stop ${list.length + 1}`, lat: at.lat, lng: at.lng, from: '', to: '' },
+      ]);
     }
     this.result.set(null);
   }
@@ -238,13 +277,17 @@ export class RoutePlanner {
     this.layer.clearLayers();
     const result = this.result();
     result?.routes.forEach((route, i) =>
-      L.polyline(route.geometry, { color: this.colour(i), weight: 5, opacity: 0.8 }).bindTooltip(route.registration).addTo(this.layer),
+      L.polyline(route.geometry, { color: this.colour(i), weight: 5, opacity: 0.8 })
+        .bindTooltip(route.registration)
+        .addTo(this.layer),
     );
     // Stop markers take the colour of the route that serves them.
     const colourOfStop = new Map<number, string>();
     result?.routes.forEach((route, i) => route.stops.forEach((v) => colourOfStop.set(v.stop, this.colour(i))));
     this.stops().forEach((stop, i) =>
-      pin(String(i + 1), colourOfStop.get(i) ?? '#5d6b7a', stop.name).setLatLng([stop.lat, stop.lng]).addTo(this.layer),
+      pin(String(i + 1), colourOfStop.get(i) ?? '#5d6b7a', stop.name)
+        .setLatLng([stop.lat, stop.lng])
+        .addTo(this.layer),
     );
     const depot = this.depot();
     if (depot) pin('D', '#16202c', 'Depot').setLatLng([depot.lat, depot.lng]).addTo(this.layer);
@@ -266,7 +309,10 @@ function pin(text: string, colour: string, title: string): L.Marker {
   el.className = 'stop-marker';
   el.style.background = colour;
   el.textContent = text; // textContent: stop names are user input
-  return L.marker([0, 0], { icon: L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: el }), title });
+  return L.marker([0, 0], {
+    icon: L.divIcon({ className: '', iconSize: [24, 24], iconAnchor: [12, 12], html: el }),
+    title,
+  });
 }
 
 /** "09:30" -> today at that local time as an ISO instant; '' -> undefined. */

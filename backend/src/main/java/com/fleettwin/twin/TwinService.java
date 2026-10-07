@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -115,8 +116,8 @@ public class TwinService {
 
     public synchronized void applyDriving(long vehicleId, Double driverScore, Double kmPerLitre) {
         VehicleTwin twin = load(vehicleId);
-        if (!java.util.Objects.equals(twin.getDriverScore(), driverScore)
-                || !java.util.Objects.equals(twin.getFuelEfficiencyKmPerLitre(), kmPerLitre)) {
+        if (!Objects.equals(twin.getDriverScore(), driverScore)
+                || !Objects.equals(twin.getFuelEfficiencyKmPerLitre(), kmPerLitre)) {
             twin.setDriverScore(driverScore);
             twin.setFuelEfficiencyKmPerLitre(kmPerLitre);
             save(twin);

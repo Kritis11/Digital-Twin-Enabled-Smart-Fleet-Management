@@ -13,9 +13,9 @@ spring:
     # No users yet: stops Boot generating and logging a default password.
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB}
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:fleettwin}
+    username: ${POSTGRES_USER:fleettwin}
+    password: ${POSTGRES_PASSWORD}        # passwords and JWT_SECRET have no default on purpose: see docs/configuration.md
   jpa:
     hibernate:
       ddl-auto: validate
@@ -44,7 +44,7 @@ server:
 fleet:
   mqtt:
     url: tcp://${MQTT_HOST:localhost}:${MQTT_PORT:1883}
-    username: ${MQTT_USERNAME}
+    username: ${MQTT_USERNAME:fleettwin}
     password: ${MQTT_PASSWORD}
     client-id: fleet-twin-backend
     topic: fleet/+/telemetry
@@ -148,7 +148,7 @@ fleet:
       to: ${REPORTS_EMAIL_TO:}    # comma-separated
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:${MINIO_API_PORT:9000}}
-    access-key: ${MINIO_ROOT_USER}
+    access-key: ${MINIO_ROOT_USER:fleettwin}
     secret-key: ${MINIO_ROOT_PASSWORD}
   utilisation:
     working-hours-per-day: 10     # 100% utilisation = on trips for this long every day

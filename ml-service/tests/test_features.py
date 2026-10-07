@@ -1,17 +1,18 @@
 import pandas as pd
 import pytest
-
 from app.features import SIGNALS, build_features, feature_names
 
 
 def frame(rows):
     """rows: (vehicle_id, seconds, engine_temp)"""
     t0 = pd.Timestamp("2026-10-06T10:00:00Z")
-    return pd.DataFrame({
-        "vehicle_id": [r[0] for r in rows],
-        "ts": [t0 + pd.Timedelta(seconds=r[1]) for r in rows],
-        "engine_temp": [float(r[2]) for r in rows],
-    })
+    return pd.DataFrame(
+        {
+            "vehicle_id": [r[0] for r in rows],
+            "ts": [t0 + pd.Timedelta(seconds=r[1]) for r in rows],
+            "engine_temp": [float(r[2]) for r in rows],
+        }
+    )
 
 
 def test_columns_match_feature_names_and_missing_signals_are_nan():
@@ -46,6 +47,6 @@ def test_windows_never_mix_vehicles_and_output_follows_input_index():
     df = frame([(2, 10, 200), (1, 0, 90), (2, 0, 100), (1, 10, 92)])
     X = build_features(df)
     assert list(X.index) == [1, 3, 2, 0]  # sorted by vehicle, then time, keeping the caller's index
-    assert X.loc[3, "engine_temp_max_30s"] == 92    # vehicle 1 never sees vehicle 2's 200
+    assert X.loc[3, "engine_temp_max_30s"] == 92  # vehicle 1 never sees vehicle 2's 200
     assert X.loc[0, "engine_temp_min_30s"] == 100
     assert X.loc[0, "engine_temp_mean_30s"] == 150

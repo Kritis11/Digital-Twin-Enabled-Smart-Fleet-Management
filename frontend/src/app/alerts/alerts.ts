@@ -11,20 +11,23 @@ import { FleetService } from '../fleet.service';
     <h1>Alerts</h1>
 
     <section class="panel filters" aria-label="Filters">
-      <label>Status
+      <label
+        >Status
         <select [(ngModel)]="status">
           <option value="open">Open</option>
           <option value="all">All</option>
         </select>
       </label>
-      <label>Severity
+      <label
+        >Severity
         <select [(ngModel)]="severity">
           <option value="">Any</option>
           <option value="CRITICAL">Critical</option>
           <option value="WARNING">Warning</option>
         </select>
       </label>
-      <label>Vehicle
+      <label
+        >Vehicle
         <select [(ngModel)]="vehicleId">
           <option [ngValue]="null">Any</option>
           @for (twin of fleet.twins(); track twin.id) {
@@ -32,7 +35,8 @@ import { FleetService } from '../fleet.service';
           }
         </select>
       </label>
-      <label>Source
+      <label
+        >Source
         <select [(ngModel)]="source">
           <option value="">Any</option>
           <option value="RULE">Rule</option>
@@ -54,22 +58,40 @@ import { FleetService } from '../fleet.service';
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>Time</th><th>Vehicle</th><th>Component</th><th>Severity</th><th>Source</th><th>Message</th><th></th></tr>
+              <tr>
+                <th>Time</th>
+                <th>Vehicle</th>
+                <th>Component</th>
+                <th>Severity</th>
+                <th>Source</th>
+                <th>Message</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               @for (alert of shown(); track alert.id) {
                 <tr [class.acknowledged]="alert.acknowledged">
                   <td class="nowrap">{{ alert.createdAt | date: 'd MMM HH:mm:ss' }}</td>
-                  <td><a [routerLink]="['/vehicles', alert.vehicleId]">{{ registrations().get(alert.vehicleId) ?? alert.vehicleId }}</a></td>
+                  <td>
+                    <a [routerLink]="['/vehicles', alert.vehicleId]">{{
+                      registrations().get(alert.vehicleId) ?? alert.vehicleId
+                    }}</a>
+                  </td>
                   <td>{{ alert.component }}</td>
-                  <td><span class="pill" [class]="alert.severity.toLowerCase()">{{ alert.severity }}</span></td>
-                  <td><span class="pill" [class]="alert.source.toLowerCase()">{{ alert.source }}</span></td>
+                  <td>
+                    <span class="pill" [class]="alert.severity.toLowerCase()">{{ alert.severity }}</span>
+                  </td>
+                  <td>
+                    <span class="pill" [class]="alert.source.toLowerCase()">{{ alert.source }}</span>
+                  </td>
                   <td>{{ alert.message }}</td>
                   <td>
                     @if (alert.acknowledged) {
                       <span class="muted">Acknowledged</span>
                     } @else if (fleet.canWrite()) {
-                      <button type="button" [disabled]="busy().has(alert.id)" (click)="acknowledge(alert.id)">Acknowledge</button>
+                      <button type="button" [disabled]="busy().has(alert.id)" (click)="acknowledge(alert.id)">
+                        Acknowledge
+                      </button>
                     }
                   </td>
                 </tr>
@@ -93,20 +115,23 @@ export class Alerts {
 
   protected readonly registrations = computed(() => new Map(this.fleet.twins().map((t) => [t.id, t.registration])));
   protected readonly shown = computed(() =>
-    this.fleet.alerts().filter(
-      (a) =>
-        (this.status() === 'all' || !a.acknowledged) &&
-        (!this.severity() || a.severity === this.severity()) &&
-        (!this.source() || a.source === this.source()) &&
-        (this.vehicleId() == null || a.vehicleId === this.vehicleId()),
-    ),
+    this.fleet
+      .alerts()
+      .filter(
+        (a) =>
+          (this.status() === 'all' || !a.acknowledged) &&
+          (!this.severity() || a.severity === this.severity()) &&
+          (!this.source() || a.source === this.source()) &&
+          (this.vehicleId() == null || a.vehicleId === this.vehicleId()),
+      ),
   );
 
   protected acknowledge(id: number): void {
     const setBusy = (on: boolean) =>
       this.busy.update((ids) => {
         const next = new Set(ids);
-        on ? next.add(id) : next.delete(id);
+        if (on) next.add(id);
+        else next.delete(id);
         return next;
       });
     setBusy(true);

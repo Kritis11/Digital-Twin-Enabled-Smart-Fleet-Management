@@ -57,7 +57,7 @@ public class TelemetryIngestService {
             telemetry = repository.save(parse(topic, json, objectMapper));
             record(storedDelay, telemetry);
         } catch (Exception e) {
-            log.warn("Dropped telemetry on topic {}: {}", topic, e.getMessage());
+            log.warn("Dropped telemetry on topic {}: {}", topic, e.toString());
             return;
         }
         // The row is stored; a twin failure (e.g. Redis down) must not look like lost telemetry.

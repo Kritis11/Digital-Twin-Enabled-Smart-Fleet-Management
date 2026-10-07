@@ -38,20 +38,36 @@ const ROLES: Role[] = ['ADMIN', 'FLEET_MANAGER', 'TECHNICIAN', 'VIEWER'];
       <h2>Users</h2>
       <div class="scroll">
         <table>
-          <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             @for (u of users(); track u.id) {
               <tr [class.acknowledged]="!u.enabled">
                 <td>{{ u.username }}{{ u.username === auth.session()?.username ? ' (you)' : '' }}</td>
                 <td>
-                  <select [ngModel]="u.role" (ngModelChange)="change(u, { role: $event })" [attr.aria-label]="'Role of ' + u.username">
-                    @for (r of roles; track r) { <option [value]="r">{{ r }}</option> }
+                  <select
+                    [ngModel]="u.role"
+                    (ngModelChange)="change(u, { role: $event })"
+                    [attr.aria-label]="'Role of ' + u.username"
+                  >
+                    @for (r of roles; track r) {
+                      <option [value]="r">{{ r }}</option>
+                    }
                   </select>
                 </td>
                 <td>{{ u.enabled ? 'Active' : 'Disabled' }}</td>
                 <td class="nowrap">{{ u.createdAt | date: 'd MMM y' }}</td>
                 <td class="actions">
-                  <button type="button" (click)="change(u, { enabled: !u.enabled })">{{ u.enabled ? 'Disable' : 'Enable' }}</button>
+                  <button type="button" (click)="change(u, { enabled: !u.enabled })">
+                    {{ u.enabled ? 'Disable' : 'Enable' }}
+                  </button>
                   <button type="button" (click)="resetPassword(u)">Reset password</button>
                 </td>
               </tr>
@@ -63,10 +79,15 @@ const ROLES: Role[] = ['ADMIN', 'FLEET_MANAGER', 'TECHNICIAN', 'VIEWER'];
       <h3>Add a user</h3>
       <form class="filters" (ngSubmit)="create()">
         <label>Username <input name="username" [(ngModel)]="username" autocomplete="off" required /></label>
-        <label>Password <input name="password" type="password" [(ngModel)]="password" autocomplete="new-password" required /></label>
-        <label>Role
+        <label
+          >Password <input name="password" type="password" [(ngModel)]="password" autocomplete="new-password" required
+        /></label>
+        <label
+          >Role
           <select name="role" [(ngModel)]="role">
-            @for (r of roles; track r) { <option [value]="r">{{ r }}</option> }
+            @for (r of roles; track r) {
+              <option [value]="r">{{ r }}</option>
+            }
           </select>
         </label>
         <button type="submit" [disabled]="!username() || !password()">Add user</button>
@@ -80,7 +101,15 @@ const ROLES: Role[] = ['ADMIN', 'FLEET_MANAGER', 'TECHNICIAN', 'VIEWER'];
       } @else {
         <div class="scroll tall">
           <table>
-            <thead><tr><th>When</th><th>Who</th><th>Action</th><th>What</th><th>Detail</th></tr></thead>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Who</th>
+                <th>Action</th>
+                <th>What</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
             <tbody>
               @for (a of audit(); track a.id) {
                 <tr>
@@ -100,7 +129,8 @@ const ROLES: Role[] = ['ADMIN', 'FLEET_MANAGER', 'TECHNICIAN', 'VIEWER'];
     <section class="panel">
       <h2>Thresholds and settings</h2>
       <p class="muted">
-        The values in force. They are set in the backend's application.yml (or environment variables) and apply after a restart.
+        The values in force. They are set in the backend's application.yml (or environment variables) and apply after a
+        restart.
       </p>
       <details>
         <summary>Show settings</summary>
@@ -145,7 +175,9 @@ export class Users {
 
   protected change(user: User, change: { role?: Role; enabled?: boolean; password?: string }): void {
     this.error.set(null);
-    this.http.patch(`${this.api}/users/${user.id}`, change).subscribe({ next: () => this.load(), error: (e) => this.fail(e) });
+    this.http
+      .patch(`${this.api}/users/${user.id}`, change)
+      .subscribe({ next: () => this.load(), error: (e) => this.fail(e) });
   }
 
   protected resetPassword(user: User): void {

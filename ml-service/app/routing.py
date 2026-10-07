@@ -4,6 +4,7 @@ If OSRM is unreachable, or a point lies outside the map region it was built for,
 back to straight-line distances (times a detour factor) at a fixed average speed.
 """
 
+import itertools
 import json
 import math
 import os
@@ -73,8 +74,17 @@ def geometry(points: list[Point], source: str) -> list[Point]:
     return points
 
 
-def solve(vehicles: list[dict], stops: list[dict], dist: Matrix, dur: Matrix, *, return_to_start: bool,
-          balance: int, max_stops_per_vehicle: int | None, time_limit_s: float) -> tuple[list[dict], list[int]]:
+def solve(
+    vehicles: list[dict],
+    stops: list[dict],
+    dist: Matrix,
+    dur: Matrix,
+    *,
+    return_to_start: bool,
+    balance: int,
+    max_stops_per_vehicle: int | None,
+    time_limit_s: float,
+) -> tuple[list[dict], list[int]]:
     """Assigns and orders stops. Matrix nodes are the vehicles' start points followed by the stops.
 
     vehicles: {id, cost_factor}; a higher cost factor makes each km on that vehicle count for more, so the
@@ -93,7 +103,8 @@ def solve(vehicles: list[dict], stops: list[dict], dist: Matrix, dur: Matrix, *,
     for v, vehicle in enumerate(vehicles):
         factor = vehicle["cost_factor"]
         cost = routing.RegisterTransitCallback(
-            lambda a, b, f=factor: int(leg(dist, manager.IndexToNode(a), manager.IndexToNode(b)) * f))
+            lambda a, b, f=factor: int(leg(dist, manager.IndexToNode(a), manager.IndexToNode(b)) * f)
+        )
         routing.SetArcCostEvaluatorOfVehicle(cost, v)
 
     def travel_time(a: int, b: int) -> int:
@@ -138,11 +149,13 @@ def solve(vehicles: list[dict], stops: list[dict], dist: Matrix, dur: Matrix, *,
                 served.add(stop["id"])
                 visits.append({"id": stop["id"], "arrival_s": solution.Value(time.CumulVar(index))})
         if visits:
-            routes.append({
-                "vehicle_id": vehicle["id"],
-                "stops": visits,
-                "distance_m": round(sum(leg(dist, a, b) for a, b in zip(nodes, nodes[1:]))),
-                "duration_s": solution.Value(time.CumulVar(index)),
-                "nodes": nodes if return_to_start else nodes[:-1],
-            })
+            routes.append(
+                {
+                    "vehicle_id": vehicle["id"],
+                    "stops": visits,
+                    "distance_m": round(sum(leg(dist, a, b) for a, b in itertools.pairwise(nodes))),
+                    "duration_s": solution.Value(time.CumulVar(index)),
+                    "nodes": nodes if return_to_start else nodes[:-1],
+                }
+            )
     return routes, [s["id"] for s in stops if s["id"] not in served]

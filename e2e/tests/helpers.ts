@@ -3,10 +3,20 @@ import { readFileSync } from 'node:fs';
 
 export type Role = 'ADMIN' | 'FLEET_MANAGER' | 'TECHNICIAN' | 'VIEWER';
 
-const users: Record<Role, { username: string; password: string }> = JSON.parse(readFileSync('.auth/users.json', 'utf8'));
+const users: Record<Role, { username: string; password: string }> = JSON.parse(
+  readFileSync('.auth/users.json', 'utf8'),
+);
 
 export const MENU: Record<Role, string[]> = {
-  ADMIN: ['Fleet Overview', 'Alerts', 'Maintenance Planner', 'Drivers & Fuel', 'Route Planner', 'Reports', 'User Management'],
+  ADMIN: [
+    'Fleet Overview',
+    'Alerts',
+    'Maintenance Planner',
+    'Drivers & Fuel',
+    'Route Planner',
+    'Reports',
+    'User Management',
+  ],
   FLEET_MANAGER: ['Fleet Overview', 'Alerts', 'Maintenance Planner', 'Drivers & Fuel', 'Route Planner', 'Reports'],
   TECHNICIAN: ['Fleet Overview', 'Alerts', 'Maintenance Planner'],
   VIEWER: ['Fleet Overview', 'Alerts', 'Maintenance Planner', 'Drivers & Fuel', 'Reports'],

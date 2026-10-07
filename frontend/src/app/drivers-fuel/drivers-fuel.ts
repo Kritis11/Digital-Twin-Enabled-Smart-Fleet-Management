@@ -30,11 +30,24 @@ const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
       <p class="muted">Loading…</p>
     } @else {
       <section class="cards" aria-label="Fleet totals">
-        <div class="card"><span>Distance</span><strong>{{ summary()!.totals.distanceKm | number: '1.0-0' }} km</strong></div>
-        <div class="card"><span>Fuel burned</span><strong>{{ summary()!.totals.fuelLitres | number: '1.0-0' }} l</strong></div>
-        <div class="card"><span>Fleet efficiency</span>
-          <strong>{{ summary()!.totals.kmPerLitre == null ? '–' : (summary()!.totals.kmPerLitre | number: '1.2-2') }} km/l</strong></div>
-        <div class="card"><span>Idling cost</span><strong>{{ summary()!.totals.idleLitres | number: '1.0-0' }} l</strong></div>
+        <div class="card">
+          <span>Distance</span><strong>{{ summary()!.totals.distanceKm | number: '1.0-0' }} km</strong>
+        </div>
+        <div class="card">
+          <span>Fuel burned</span><strong>{{ summary()!.totals.fuelLitres | number: '1.0-0' }} l</strong>
+        </div>
+        <div class="card">
+          <span>Fleet efficiency</span>
+          <strong
+            >{{
+              summary()!.totals.kmPerLitre == null ? '–' : (summary()!.totals.kmPerLitre | number: '1.2-2')
+            }}
+            km/l</strong
+          >
+        </div>
+        <div class="card">
+          <span>Idling cost</span><strong>{{ summary()!.totals.idleLitres | number: '1.0-0' }} l</strong>
+        </div>
       </section>
 
       <section class="panel">
@@ -42,19 +55,31 @@ const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>#</th><th>Vehicle</th><th>Driver score</th><th>Distance</th><th>Efficiency</th>
-                <th>Per 100 km</th><th>Idling</th><th>Fuel anomalies</th></tr>
+              <tr>
+                <th>#</th>
+                <th>Vehicle</th>
+                <th>Driver score</th>
+                <th>Distance</th>
+                <th>Efficiency</th>
+                <th>Per 100 km</th>
+                <th>Idling</th>
+                <th>Fuel anomalies</th>
+              </tr>
             </thead>
             <tbody>
               @for (v of ranked(); track v.vehicleId; let i = $index) {
                 <tr>
                   <td>{{ i + 1 }}</td>
-                  <td><a [routerLink]="['/vehicles', v.vehicleId]">{{ v.registration }}</a></td>
+                  <td>
+                    <a [routerLink]="['/vehicles', v.vehicleId]">{{ v.registration }}</a>
+                  </td>
                   <td>
                     @if (v.driverScore == null) {
                       <span class="muted">no trips</span>
                     } @else {
-                      <div class="score-bar"><div [style.width.%]="v.driverScore" [class]="scoreLevel(v.driverScore)"></div></div>
+                      <div class="score-bar">
+                        <div [style.width.%]="v.driverScore" [class]="scoreLevel(v.driverScore)"></div>
+                      </div>
                       {{ v.driverScore | number: '1.0-0' }}
                     }
                   </td>
@@ -75,8 +100,8 @@ const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
         <p>{{ summary()!.idlingSummary }}</p>
         @if (summary()!.scoreEfficiencyCorrelation != null) {
           <p class="muted">
-            Driver score and fuel efficiency move together across vehicle-days:
-            correlation {{ summary()!.scoreEfficiencyCorrelation | number: '1.2-2' }}
+            Driver score and fuel efficiency move together across vehicle-days: correlation
+            {{ summary()!.scoreEfficiencyCorrelation | number: '1.2-2' }}
             (1 = better-scored days always go further per litre, 0 = unrelated).
           </p>
         }
@@ -90,27 +115,52 @@ const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
         <section class="panel">
           <h2>Utilisation</h2>
           <p>
-            The fleet was on trips for {{ u.fleet.activeHours | number: '1.0-0' }} h
-            ({{ u.fleet.utilisation | percent }} of {{ u.availableHoursPerVehicle | number: '1.0-0' }} working hours per vehicle),
+            The fleet was on trips for {{ u.fleet.activeHours | number: '1.0-0' }} h ({{
+              u.fleet.utilisation | percent
+            }}
+            of {{ u.availableHoursPerVehicle | number: '1.0-0' }} working hours per vehicle),
             {{ u.fleet.idleHours | number: '1.0-0' }} h of it standing with the engine on.
-            @if (u.fleet.underUsed.length) { Under-used: {{ u.fleet.underUsed.join(', ') }}. }
-            @if (u.fleet.overUsed.length) { Over-used: {{ u.fleet.overUsed.join(', ') }}. }
+            @if (u.fleet.underUsed.length) {
+              Under-used: {{ u.fleet.underUsed.join(', ') }}.
+            }
+            @if (u.fleet.overUsed.length) {
+              Over-used: {{ u.fleet.overUsed.join(', ') }}.
+            }
           </p>
           <div class="scroll">
             <table>
               <thead>
-                <tr><th>Vehicle</th><th>Utilisation</th><th>Active</th><th>Idle</th><th>Distance</th><th>Trips</th><th>Usage</th></tr>
+                <tr>
+                  <th>Vehicle</th>
+                  <th>Utilisation</th>
+                  <th>Active</th>
+                  <th>Idle</th>
+                  <th>Distance</th>
+                  <th>Trips</th>
+                  <th>Usage</th>
+                </tr>
               </thead>
               <tbody>
                 @for (v of u.vehicles; track v.vehicleId) {
                   <tr>
-                    <td><a [routerLink]="['/vehicles', v.vehicleId]">{{ v.registration }}</a></td>
                     <td>
-                      <div class="score-bar"><div [style.width.%]="v.utilisation * 100" [class]="v.usage === 'NORMAL' ? 'ok' : 'warning'"></div></div>
+                      <a [routerLink]="['/vehicles', v.vehicleId]">{{ v.registration }}</a>
+                    </td>
+                    <td>
+                      <div class="score-bar">
+                        <div
+                          [style.width.%]="v.utilisation * 100"
+                          [class]="v.usage === 'NORMAL' ? 'ok' : 'warning'"
+                        ></div>
+                      </div>
                       {{ v.utilisation | percent }}
                     </td>
                     <td>{{ v.activeHours | number: '1.1-1' }} h</td>
-                    <td>{{ v.idleHours | number: '1.1-1' }} h{{ v.idleShare == null ? '' : ' (' + (v.idleShare | percent) + ')' }}</td>
+                    <td>
+                      {{ v.idleHours | number: '1.1-1' }} h{{
+                        v.idleShare == null ? '' : ' (' + (v.idleShare | percent) + ')'
+                      }}
+                    </td>
                     <td>{{ v.distanceKm | number: '1.0-0' }} km</td>
                     <td>{{ v.trips }}</td>
                     <td>
@@ -143,10 +193,16 @@ export class DriversFuel {
     [...(this.summary()?.vehicles ?? [])].sort((a, b) => (b.driverScore ?? -1) - (a.driverScore ?? -1)),
   );
   protected readonly efficiencyChart = computed(() =>
-    barChart('Fuel efficiency (km/l)', this.ranked().map((v) => [v.registration, v.kmPerLitre])),
+    barChart(
+      'Fuel efficiency (km/l)',
+      this.ranked().map((v) => [v.registration, v.kmPerLitre]),
+    ),
   );
   protected readonly idlingChart = computed(() =>
-    barChart('Fuel used idling (l)', this.ranked().map((v) => [v.registration, v.idleLitres])),
+    barChart(
+      'Fuel used idling (l)',
+      this.ranked().map((v) => [v.registration, v.idleLitres]),
+    ),
   );
 
   constructor() {

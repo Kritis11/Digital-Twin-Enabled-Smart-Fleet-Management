@@ -1,4 +1,14 @@
-import { Component, DestroyRef, ElementRef, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import * as L from 'leaflet';
@@ -12,10 +22,18 @@ import { FleetService, VehicleTwin, ago, healthLevel, rulLevel } from '../fleet.
     <h1>Fleet Overview</h1>
 
     <section class="cards" aria-label="Fleet summary">
-      <div class="card"><span>Total vehicles</span><strong>{{ fleet.twins().length }}</strong></div>
-      <div class="card"><span>Moving</span><strong>{{ counts().MOVING }}</strong></div>
-      <div class="card"><span>Idle</span><strong>{{ counts().IDLE }}</strong></div>
-      <div class="card"><span>Offline</span><strong>{{ counts().OFFLINE }}</strong></div>
+      <div class="card">
+        <span>Total vehicles</span><strong>{{ fleet.twins().length }}</strong>
+      </div>
+      <div class="card">
+        <span>Moving</span><strong>{{ counts().MOVING }}</strong>
+      </div>
+      <div class="card">
+        <span>Idle</span><strong>{{ counts().IDLE }}</strong>
+      </div>
+      <div class="card">
+        <span>Offline</span><strong>{{ counts().OFFLINE }}</strong>
+      </div>
       <a class="card" routerLink="/alerts" [class.critical]="fleet.openAlerts().length">
         <span>Open alerts</span><strong>{{ fleet.openAlerts().length }}</strong>
       </a>
@@ -43,7 +61,14 @@ import { FleetService, VehicleTwin, ago, healthLevel, rulLevel } from '../fleet.
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>Vehicle</th><th>State</th><th>Health</th><th>Driver score</th><th>Efficiency</th><th>Last seen</th></tr>
+              <tr>
+                <th>Vehicle</th>
+                <th>State</th>
+                <th>Health</th>
+                <th>Driver score</th>
+                <th>Efficiency</th>
+                <th>Last seen</th>
+              </tr>
             </thead>
             <tbody>
               @for (twin of fleet.twins(); track twin.id) {
@@ -52,13 +77,21 @@ import { FleetService, VehicleTwin, ago, healthLevel, rulLevel } from '../fleet.
                     <a [routerLink]="['/vehicles', twin.id]">{{ twin.registration }}</a>
                     <span class="muted"> {{ twin.make }} {{ twin.model }}</span>
                   </td>
-                  <td><span class="pill" [class]="twin.state.toLowerCase()">{{ twin.state }}</span></td>
+                  <td>
+                    <span class="pill" [class]="twin.state.toLowerCase()">{{ twin.state }}</span>
+                  </td>
                   <td>
                     <span class="dot" [class]="level(twin)"></span>
                     {{ twin.healthScore == null ? '–' : (twin.healthScore | number: '1.0-0') }}
                   </td>
                   <td>{{ twin.driverScore == null ? '–' : (twin.driverScore | number: '1.0-0') }}</td>
-                  <td>{{ twin.fuelEfficiencyKmPerLitre == null ? '–' : (twin.fuelEfficiencyKmPerLitre | number: '1.2-2') + ' km/l' }}</td>
+                  <td>
+                    {{
+                      twin.fuelEfficiencyKmPerLitre == null
+                        ? '–'
+                        : (twin.fuelEfficiencyKmPerLitre | number: '1.2-2') + ' km/l'
+                    }}
+                  </td>
                   <td>{{ ago(twin.lastSeen, fleet.now()) }}</td>
                 </tr>
               }
@@ -83,7 +116,11 @@ export class FleetOverview {
   protected readonly lowestRul = computed(() => {
     const all = this.fleet.twins().flatMap((t) =>
       Object.entries(t.rul ?? {}).map(([component, r]) => ({
-        vehicleId: t.id, registration: t.registration, component, days: r.days, level: rulLevel(r.days),
+        vehicleId: t.id,
+        registration: t.registration,
+        component,
+        days: r.days,
+        level: rulLevel(r.days),
       })),
     );
     return all.length ? all.reduce((a, b) => (b.days < a.days ? b : a)) : null;

@@ -19,7 +19,13 @@ test('fleet manager: overview, a vehicle in detail, and back', async ({ page }) 
   await expect(page.getByRole('heading', { name: registration, level: 1 })).toBeVisible();
   await expect(page.locator('.tile')).toHaveCount(8); // engine, battery, brakes, four tyres, fuel
   await expect(page.getByText('Health score')).toBeVisible();
-  for (const section of ['Remaining useful life', 'Recommendations', 'Driving and fuel', 'Telemetry', 'Maintenance history']) {
+  for (const section of [
+    'Remaining useful life',
+    'Recommendations',
+    'Driving and fuel',
+    'Telemetry',
+    'Maintenance history',
+  ]) {
     await expect(page.getByRole('heading', { name: section })).toBeVisible();
   }
   await expect(page.locator('section', { hasText: 'Telemetry' }).locator('canvas').first()).toBeVisible();
@@ -63,7 +69,12 @@ test('technician completes a recommendation, which records the maintenance', asy
 
   // The work is now in that vehicle's maintenance history
   await page.getByLabel('Status').selectOption('DONE');
-  await page.locator('tbody tr', { hasText: action }).filter({ hasText: registration }).first().getByRole('link', { name: registration }).click();
+  await page
+    .locator('tbody tr', { hasText: action })
+    .filter({ hasText: registration })
+    .first()
+    .getByRole('link', { name: registration })
+    .click();
   const history = page.locator('section', { has: page.getByRole('heading', { name: 'Maintenance history' }) });
   await expect(history.locator('tbody tr').first()).toContainText(action);
 });
@@ -81,10 +92,19 @@ test('fleet manager plans routes for stops clicked on the map', async ({ page })
   await page.mouse.click(centre.x, centre.y);
   await expect(page.getByRole('button', { name: 'Move depot', exact: true })).toBeVisible();
   // a few pixels apart: the map shows the whole country here, so this is tens of kilometres
-  for (const [dx, dy] of [[-12, -8], [10, -9], [14, 6], [-9, 10], [2, -13], [-15, 2]]) {
+  for (const [dx, dy] of [
+    [-12, -8],
+    [10, -9],
+    [14, 6],
+    [-9, 10],
+    [2, -13],
+    [-15, 2],
+  ]) {
     await page.mouse.click(centre.x + dx, centre.y + dy);
   }
-  const stops = page.locator('section', { has: page.getByRole('button', { name: 'Optimise routes' }) }).locator('tbody tr');
+  const stops = page
+    .locator('section', { has: page.getByRole('button', { name: 'Optimise routes' }) })
+    .locator('tbody tr');
   await expect(stops).toHaveCount(6);
   await stops.first().getByRole('button', { name: 'Remove' }).click();
   await expect(stops).toHaveCount(5);
@@ -123,7 +143,10 @@ test('fleet manager generates a report and downloads it again from the list', as
 
   await page.getByLabel('Report').selectOption('MAINTENANCE');
   await page.getByLabel('Format').selectOption('XLSX');
-  const [generated] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Generate' }).click()]);
+  const [generated] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Generate' }).click(),
+  ]);
   expect(generated.suggestedFilename()).toMatch(/^maintenance_\d{4}-\d\d-\d\d_\d{4}-\d\d-\d\d\.xlsx$/);
   expect(await generated.failure()).toBeNull();
 
@@ -131,7 +154,10 @@ test('fleet manager generates a report and downloads it again from the list', as
   await expect(past.first()).toContainText('Maintenance report');
   await expect(past.first()).toContainText('Excel');
   await expect(past.first()).toContainText('e2e-fleet-manager');
-  const [again] = await Promise.all([page.waitForEvent('download'), past.first().getByRole('button', { name: 'Download' }).click()]);
+  const [again] = await Promise.all([
+    page.waitForEvent('download'),
+    past.first().getByRole('button', { name: 'Download' }).click(),
+  ]);
   expect(again.suggestedFilename()).toBe(generated.suggestedFilename());
 });
 
@@ -143,7 +169,12 @@ test('fleet manager sees drivers, fuel and utilisation', async ({ page }) => {
   }
   await page.getByRole('button', { name: '30d' }).click();
   await expect(page.getByRole('heading', { name: 'Utilisation' })).toBeVisible();
-  await expect(page.locator('section', { has: page.getByRole('heading', { name: 'Utilisation' }) }).locator('tbody tr').first()).toContainText('%');
+  await expect(
+    page
+      .locator('section', { has: page.getByRole('heading', { name: 'Utilisation' }) })
+      .locator('tbody tr')
+      .first(),
+  ).toContainText('%');
 });
 
 test('viewer can look at everything on their pages but change nothing', async ({ page }) => {

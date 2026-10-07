@@ -11,7 +11,7 @@ def write_section(name: str, text: str) -> None:
     block = f"{start}\n{text.strip()}\n{end}"
     current = REPORT.read_text() if REPORT.exists() else ""
     if start in current and end in current:
-        current = current[: current.index(start)] + block + current[current.index(end) + len(end):]
+        current = current[: current.index(start)] + block + current[current.index(end) + len(end) :]
     else:
         current = (current.rstrip() + "\n\n" if current.strip() else "") + block + "\n"
     REPORT.write_text(current)

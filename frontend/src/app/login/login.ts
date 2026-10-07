@@ -9,10 +9,12 @@ import { AuthService } from '../auth';
   template: `
     <form class="panel login" (ngSubmit)="submit()">
       <h1>Fleet Twin</h1>
-      <label>Username
-        <input name="username" [(ngModel)]="username" autocomplete="username" required autofocus />
+      <label
+        >Username
+        <input name="username" [(ngModel)]="username" autocomplete="username" required />
       </label>
-      <label>Password
+      <label
+        >Password
         <input name="password" type="password" [(ngModel)]="password" autocomplete="current-password" required />
       </label>
       @if (error(); as message) {

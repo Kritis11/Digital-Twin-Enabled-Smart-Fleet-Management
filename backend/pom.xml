@@ -30,6 +30,7 @@
         <postgresql.version>42.7.12</postgresql.version>
         <bouncycastle.version>1.86</bouncycastle.version>
         <jacoco.version>0.8.15</jacoco.version>
+        <spotless.version>3.10.3</spotless.version>
     </properties>
 
     <dependencyManagement>
@@ -194,6 +195,34 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <!-- Formatting: `mvn spotless:apply` fixes, `mvn spotless:check` (run by CI) only reports.
+                 Deliberately light: the rules that never need a human decision. -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <removeUnusedImports/>
+                        <importOrder>
+                            <order>\#,java|javax,</order>
+                        </importOrder>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                        <indent>
+                            <spaces>true</spaces>
+                            <spacesPerTab>4</spacesPerTab>
+                        </indent>
+                    </java>
+                    <pom>
+                        <includes>
+                            <include>pom.xml</include>
+                        </includes>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </pom>
+                </configuration>
             </plugin>
             <!-- Coverage of unit and integration tests together: target/site/jacoco/index.html after `mvn verify`. -->
             <plugin>

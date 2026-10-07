@@ -18,6 +18,8 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+      - name: Formatting (mvn spotless:apply fixes it)
+        run: mvn -B -q spotless:check
       # Unit tests, then the integration tests (Testcontainers starts TimescaleDB, Redis, Mosquitto and MinIO in Docker)
       - run: mvn -B verify
       - name: Coverage summary
@@ -46,6 +48,11 @@ jobs:
           cache: pip
           cache-dependency-path: ml-service/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
+      - name: Lint and formatting, all Python in the repository (ruff check --fix and black fix them)
+        run: |
+          pip install ruff==0.16.10 black==26.10.0
+          ruff check ..
+          black --check ..
       - run: python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 
   simulator:
@@ -74,6 +81,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
       - run: npx ng build
 
   compose:

@@ -1,6 +1,7 @@
 package com.fleettwin.auth;
 
 import java.security.Principal;
+import java.util.UUID;
 
 import com.fleettwin.auth.TokenService.Tokens;
 import jakarta.validation.Valid;
@@ -38,7 +39,7 @@ public class AuthController {
         this.users = users;
         this.passwords = passwords;
         this.tokens = tokens;
-        this.noSuchUserHash = passwords.encode(java.util.UUID.randomUUID().toString());
+        this.noSuchUserHash = passwords.encode(UUID.randomUUID().toString());
     }
 
     @PostMapping("/login")

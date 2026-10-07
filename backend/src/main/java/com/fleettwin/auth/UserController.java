@@ -1,6 +1,7 @@
 package com.fleettwin.auth;
 
 import java.security.Principal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -72,7 +73,7 @@ public class UserController {
         if (losesAdmin && users.countByRoleAndEnabledTrue(Role.ADMIN) <= 1) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This is the last active admin");
         }
-        List<String> changed = new java.util.ArrayList<>();
+        List<String> changed = new ArrayList<>();
         if (change.role() != null && change.role() != user.getRole()) {
             changed.add("role " + user.getRole() + " -> " + change.role());
             user.setRole(change.role());

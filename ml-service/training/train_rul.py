@@ -10,25 +10,33 @@ Needs history with part failures: run `simulator.py --fast-forward 90` first.
 """
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from dotenv import load_dotenv
-from sklearn.model_selection import GroupKFold
-
 from app import model as model_store
 from app import rul
 from app.rul import COMPONENTS, FEATURES, QUANTILES, RulModel
+from dotenv import load_dotenv
+from sklearn.model_selection import GroupKFold
+
 from training.export_data import ROOT
 from training.report import write_section
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 MIN_LIFECYCLES = 5
-XGB_PARAMS = dict(objective="reg:quantileerror", quantile_alpha=QUANTILES, n_estimators=300, max_depth=3,
-                  learning_rate=0.05, min_child_weight=3, subsample=0.9, random_state=0)
+XGB_PARAMS = dict(
+    objective="reg:quantileerror",
+    quantile_alpha=QUANTILES,
+    n_estimators=300,
+    max_depth=3,
+    learning_rate=0.05,
+    min_child_weight=3,
+    subsample=0.9,
+    random_state=0,
+)
 
 
 def run_to_failure(daily: pd.DataFrame, maintenance: pd.DataFrame, component: str) -> pd.DataFrame:
@@ -54,8 +62,11 @@ def fit_xgboost(data: pd.DataFrame) -> xgb.Booster:
 
 def metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
     error = predicted - actual
-    return {"mae": float(np.abs(error).mean()), "rmse": float(np.sqrt((error ** 2).mean())),
-            "within_7d": float((np.abs(error) <= 7).mean())}
+    return {
+        "mae": float(np.abs(error).mean()),
+        "rmse": float(np.sqrt((error**2).mean())),
+        "within_7d": float((np.abs(error) <= 7).mean()),
+    }
 
 
 def evaluate(data: pd.DataFrame, component: str) -> tuple[dict, dict]:
@@ -81,25 +92,42 @@ def evaluate(data: pd.DataFrame, component: str) -> tuple[dict, dict]:
     return results, quantiles
 
 
-def train_component(daily: pd.DataFrame, maintenance: pd.DataFrame, component: str, version: str) -> tuple[RulModel, dict] | None:
+def train_component(
+    daily: pd.DataFrame, maintenance: pd.DataFrame, component: str, version: str
+) -> tuple[RulModel, dict] | None:
     data = run_to_failure(daily, maintenance, component)
     lifecycles = data.groupby(["vehicle_id", "lifecycle"]).ngroups
     if lifecycles < MIN_LIFECYCLES or data["vehicle_id"].nunique() < 2:
-        print(f"{component}: only {lifecycles} run-to-failure lifecycles; need {MIN_LIFECYCLES} across at least 2 vehicles. "
-              "Fast-forward more days.")
+        print(
+            f"{component}: only {lifecycles} run-to-failure lifecycles; need {MIN_LIFECYCLES} across at least 2 vehicles. "
+            "Fast-forward more days."
+        )
         return None
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     data.to_csv(DATA_DIR / f"rul_{component}.csv", index=False)
 
     results, residuals = evaluate(data, component)
     best = min(results, key=lambda kind: results[kind]["mae"])
-    config = {"version": version, "component": component, "kind": best, "features": FEATURES,
-              "default_rate": default_rate(data), **residuals, "metrics": results[best]}
+    config = {
+        "version": version,
+        "component": component,
+        "kind": best,
+        "features": FEATURES,
+        "default_rate": default_rate(data),
+        **residuals,
+        "metrics": results[best],
+    }
     # the chosen kind is refitted on every vehicle
     model = RulModel(config, fit_xgboost(data) if best == "xgboost" else None)
-    info = {"rows": len(data), "lifecycles": lifecycles, "vehicles": int(data["vehicle_id"].nunique()),
-            "mean_life_days": float(data.groupby(["vehicle_id", "lifecycle"])["rul_days"].max().mean()),
-            "results": results, "best": best, "pad": residuals["interval_pad"]}
+    info = {
+        "rows": len(data),
+        "lifecycles": lifecycles,
+        "vehicles": int(data["vehicle_id"].nunique()),
+        "mean_life_days": float(data.groupby(["vehicle_id", "lifecycle"])["rul_days"].max().mean()),
+        "results": results,
+        "best": best,
+        "pad": residuals["interval_pad"],
+    }
     return model, info
 
 
@@ -108,7 +136,7 @@ def report(infos: dict[str, dict], version: str, uploaded: bool) -> str:
     lines = [
         "# Remaining useful life models",
         "",
-        f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC by `ml-service/training/train_rul.py`. "
+        f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by `ml-service/training/train_rul.py`. "
         f"Model version `{version}`.",
         "",
         "## Data",
@@ -119,7 +147,10 @@ def report(infos: dict[str, dict], version: str, uploaded: bool) -> str:
         "",
         "| Component | Lifecycles | Vehicles | Daily rows | Mean life (days) |",
         "|---|---|---|---|---|",
-        *[f"| {c} | {i['lifecycles']} | {i['vehicles']} | {i['rows']} | {i['mean_life_days']:.0f} |" for c, i in infos.items()],
+        *[
+            f"| {c} | {i['lifecycles']} | {i['vehicles']} | {i['rows']} | {i['mean_life_days']:.0f} |"
+            for c, i in infos.items()
+        ],
         "",
         f"Features ({len(FEATURES)}): " + ", ".join(f"`{f}`" for f in FEATURES) + ".",
         "",
@@ -135,19 +166,26 @@ def report(infos: dict[str, dict], version: str, uploaded: bool) -> str:
     for component, info in infos.items():
         for kind, m in info["results"].items():
             mark = " **(selected)**" if kind == info["best"] else ""
-            lines.append(f"| {component} | {names[kind]}{mark} | {m['mae']:.2f} | {m['rmse']:.2f} | "
-                         f"{m['within_7d']:.0%} | " + (f"{m['coverage_raw']:.0%}" if kind == "xgboost" else "–") + " |")
+            lines.append(
+                f"| {component} | {names[kind]}{mark} | {m['mae']:.2f} | {m['rmse']:.2f} | "
+                f"{m['within_7d']:.0%} | " + (f"{m['coverage_raw']:.0%}" if kind == "xgboost" else "–") + " |"
+            )
     lines += [
         "",
         "The model with the lower MAE is selected per component and refitted on all vehicles. "
-        + (f"Uploaded to MinIO as `models/rul/<component>/{version}/`." if uploaded else "Not uploaded (`--no-upload`)."),
+        + (
+            f"Uploaded to MinIO as `models/rul/<component>/{version}/`."
+            if uploaded
+            else "Not uploaded (`--no-upload`)."
+        ),
         "",
         "## Prediction intervals and confidence",
         "",
         "- XGBoost: three quantile models (10%, 50%, 90%); the median is `rul_days`. The raw outer quantiles are too "
         "narrow on vehicles the model has not seen (see the table), so both bounds are widened by a fixed number of "
         "days chosen so that 80% of held-out true values fall inside (conformalised quantile regression): "
-        + ", ".join(f"{c} ±{i['pad']:.1f} d" for c, i in infos.items() if i["best"] == "xgboost") + ".",
+        + ", ".join(f"{c} ±{i['pad']:.1f} d" for c, i in infos.items() if i["best"] == "xgboost")
+        + ".",
         "- Linear baseline: the bounds are the 10th and 90th percentile of its error on held-out vehicles.",
         "- `confidence` = 1 − (upper − lower) / (2 × max(rul_days, 7)), clamped to 0–1: narrow intervals relative "
         "to the prediction score high.",
@@ -169,13 +207,14 @@ def report(infos: dict[str, dict], version: str, uploaded: bool) -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--no-upload", action="store_true")
+    p.add_argument("--no-upload", action="store_true", help="train and report, but do not store the models in MinIO")
+    p.add_argument("--no-report", action="store_true", help="leave docs/model_report.md as it is")
     args = p.parse_args()
     load_dotenv(ROOT / ".env")
 
     with rul.connect() as conn:
         daily, maintenance = rul.load_daily(conn), rul.load_maintenance(conn)
-    version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    version = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     infos = {}
     for component in COMPONENTS:
         trained = train_component(daily, maintenance, component, version)
@@ -183,15 +222,22 @@ def main() -> None:
             continue
         model, infos[component] = trained
         for kind, m in infos[component]["results"].items():
-            print(f"{component:8s} {kind:8s} MAE {m['mae']:5.2f}  RMSE {m['rmse']:5.2f}  within 7d {m['within_7d']:.0%}  "
-                  + (f"raw coverage {m['coverage_raw']:.0%}" if kind == "xgboost" else "") + ("  <- selected" if kind == model.config["kind"] else ""))
+            print(
+                f"{component:8s} {kind:8s} MAE {m['mae']:5.2f}  RMSE {m['rmse']:5.2f}  within 7d {m['within_7d']:.0%}  "
+                + (f"raw coverage {m['coverage_raw']:.0%}" if kind == "xgboost" else "")
+                + ("  <- selected" if kind == model.config["kind"] else "")
+            )
         if not args.no_upload:
             model_store.upload(f"rul/{component}", version, model.config, model.dumps())
     if not infos:
         raise SystemExit("Nothing trained.")
-    write_section("rul", report(infos, version, uploaded=not args.no_upload))
-    print(f"Datasets: {DATA_DIR}/rul_<component>.csv   Report: docs/model_report.md"
-          + ("" if args.no_upload else f"   Uploaded version {version}"))
+    if not args.no_report:
+        write_section("rul", report(infos, version, uploaded=not args.no_upload))
+    print(
+        f"Datasets: {DATA_DIR}/rul_<component>.csv"
+        + ("" if args.no_report else "   Report: docs/model_report.md")
+        + ("" if args.no_upload else f"   Uploaded version {version}")
+    )
 
 
 if __name__ == "__main__":

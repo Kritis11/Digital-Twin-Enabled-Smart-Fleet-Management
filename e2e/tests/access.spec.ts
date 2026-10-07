@@ -24,7 +24,12 @@ for (const role of Object.keys(MENU) as Role[]) {
     expect(await menu(page)).toEqual(MENU[role]);
 
     // A page that is not in the menu cannot be reached by typing its address either.
-    for (const [path, name] of [['/drivers-fuel', 'Drivers & Fuel'], ['/routes', 'Route Planner'], ['/reports', 'Reports'], ['/users', 'User Management']]) {
+    for (const [path, name] of [
+      ['/drivers-fuel', 'Drivers & Fuel'],
+      ['/routes', 'Route Planner'],
+      ['/reports', 'Reports'],
+      ['/users', 'User Management'],
+    ]) {
       await page.goto(path);
       if (MENU[role].includes(name)) {
         await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();

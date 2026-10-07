@@ -8,18 +8,18 @@ and uploads the better model (by F1 on the held-out, later-in-time split) to Min
 """
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+from app import model as model_store
+from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
+from app.model import AnomalyModel
 from dotenv import load_dotenv
 from sklearn.ensemble import IsolationForest
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from xgboost import XGBClassifier
 
-from app import model as model_store
-from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
-from app.model import AnomalyModel
 from training.export_data import ANOMALY_FAULTS, DEFAULT_OUT, ROOT, load_csv, summarise
 from training.report import REPORT, write_section
 
@@ -37,8 +37,13 @@ def evaluate(y_true: pd.Series, y_pred: pd.Series, faults: pd.Series) -> dict:
     precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary", zero_division=0)
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[False, True]).ravel()
     return {
-        "precision": float(precision), "recall": float(recall), "f1": float(f1),
-        "tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "tn": int(tn),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tp": int(tp),
         "recall_by_fault": {str(k): float(v) for k, v in y_pred[y_true].groupby(faults[y_true]).mean().items()},
     }
 
@@ -54,20 +59,33 @@ def train(df: pd.DataFrame) -> tuple[dict[str, AnomalyModel], dict]:
     if y_train.nunique() < 2 or y_test.nunique() < 2:
         raise SystemExit("Need both healthy and faulty rows on each side of the time split; collect more data.")
 
-    version = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    version = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     base = {
-        "version": version, "signals": SIGNALS, "windows_s": WINDOWS_S, "features": feature_names(),
+        "version": version,
+        "signals": SIGNALS,
+        "windows_s": WINDOWS_S,
+        "features": feature_names(),
         "threshold": THRESHOLD,
-        "feature_means": X_train.mean().fillna(0).to_dict(), "feature_stds": X_train.std().fillna(0).to_dict(),
+        "feature_means": X_train.mean().fillna(0).to_dict(),
+        "feature_stds": X_train.std().fillna(0).to_dict(),
     }
 
     # Unsupervised baseline: never sees the labels.
     forest = IsolationForest(n_estimators=200, random_state=0).fit(X_train.fillna(X_train.mean()))
     # Supervised: weight the positive class by its rarity.
-    booster = XGBClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.1, subsample=0.9, colsample_bytree=0.9,
-        scale_pos_weight=float((~y_train).sum() / y_train.sum()), random_state=0,
-    ).fit(X_train, y_train).get_booster()
+    booster = (
+        XGBClassifier(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.1,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            scale_pos_weight=float((~y_train).sum() / y_train.sum()),
+            random_state=0,
+        )
+        .fit(X_train, y_train)
+        .get_booster()
+    )
 
     models = {
         "isolation_forest": AnomalyModel({**base, "kind": "isolation_forest"}, forest),
@@ -79,8 +97,12 @@ def train(df: pd.DataFrame) -> tuple[dict[str, AnomalyModel], dict]:
 
     gain = pd.Series(booster.get_score(importance_type="gain")).sort_values(ascending=False)
     info = {
-        "data": summarise(df), "cutoff": cutoff, "train_rows": int(is_train.sum()), "test_rows": int((~is_train).sum()),
-        "train_fault_rate": float(y_train.mean()), "test_fault_rate": float(y_test.mean()),
+        "data": summarise(df),
+        "cutoff": cutoff,
+        "train_rows": int(is_train.sum()),
+        "test_rows": int((~is_train).sum()),
+        "train_fault_rate": float(y_train.mean()),
+        "test_fault_rate": float(y_test.mean()),
         "top_features": (gain / gain.sum()).head(10).to_dict(),
     }
     return models, info
@@ -92,7 +114,7 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
     lines = [
         "# Anomaly detection model",
         "",
-        f"Generated {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC by `ml-service/training/train.py`. "
+        f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by `ml-service/training/train.py`. "
         f"Model version `{models[best].config['version']}`.",
         "",
         "## Data",
@@ -100,13 +122,15 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
         f"- {d['rows']} telemetry rows over {d['minutes']:.0f} minutes from the simulator; "
         f"{d['fault_rows']} rows ({d['fault_rows'] / d['rows']:.0%}) carry an `injected_fault` label.",
         f"- {d['episodes']} fault episodes: "
-        + ", ".join(f"{k} {v}" for k, v in sorted(d["episodes_by_fault"].items())) + ".",
+        + ", ".join(f"{k} {v}" for k, v in sorted(d["episodes_by_fault"].items()))
+        + ".",
         f"- Time-based split at {info['cutoff']:%Y-%m-%d %H:%M:%S} UTC: the first {info['train_rows']} rows train "
         f"({info['train_fault_rate']:.0%} faulty), the last {info['test_rows']} rows test "
         f"({info['test_fault_rate']:.0%} faulty). No shuffling.",
         f"- {len(models[best].config['features'])} features: latest value plus mean, std, min, max and rate of "
         f"change over {' and '.join(f'{w} s' for w in WINDOWS_S)} windows, per vehicle, for "
-        + ", ".join(f"`{s}`" for s in SIGNALS) + ".",
+        + ", ".join(f"`{s}`" for s in SIGNALS)
+        + ".",
         "",
         "## Results on the test split",
         "",
@@ -127,8 +151,7 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
             f"| **Actually healthy** | {m['tn']} | {m['fp']} |",
             f"| **Actually faulty** | {m['fn']} | {m['tp']} |",
             "",
-            "Recall by fault type: "
-            + ", ".join(f"{k} {v:.2f}" for k, v in sorted(m["recall_by_fault"].items())) + ".",
+            "Recall by fault type: " + ", ".join(f"{k} {v:.2f}" for k, v in sorted(m["recall_by_fault"].items())) + ".",
         ]
     lines += [
         "",
@@ -141,8 +164,11 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
         "## Selected model",
         "",
         f"**{names[best]}**, chosen by F1. "
-        + (f"Uploaded to MinIO as `models/anomaly/{models[best].config['version']}/`."
-           if uploaded else "Not uploaded (`--no-upload`)."),
+        + (
+            f"Uploaded to MinIO as `models/anomaly/{models[best].config['version']}/`."
+            if uploaded
+            else "Not uploaded (`--no-upload`)."
+        ),
         "",
         "## Caveats",
         "",
@@ -150,7 +176,7 @@ def write_report(models: dict[str, AnomalyModel], info: dict, best: str, uploade
         "outside the healthy range, so they are easy to separate; these scores say the pipeline works, not "
         "how the model would do on real vehicles.",
         "- A row is labelled faulty only while the fault is active. Engine temperature stays high for a few "
-        "readings after an overheating fault ends, so some \"false positives\" are the tail of a real fault.",
+        'readings after an overheating fault ends, so some "false positives" are the tail of a real fault.',
         "- Isolation Forest assumes anomalies are rare, but about a third of simulator rows are faulty, "
         "which is a poor fit for it.",
         "",

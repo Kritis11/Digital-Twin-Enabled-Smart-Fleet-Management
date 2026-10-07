@@ -12,5 +12,5 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withInterceptors([authInterceptor])),
     // Lazy-loaded so echarts only ships once a chart is actually rendered.
     provideEchartsCore({ echarts: () => import('echarts') }),
-  ]
+  ],
 };

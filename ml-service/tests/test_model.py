@@ -6,16 +6,23 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.ensemble import IsolationForest
-from xgboost import XGBClassifier
-
 from app import main, routing
 from app import model as store
 from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
 from app.model import AnomalyModel
+from sklearn.ensemble import IsolationForest
+from xgboost import XGBClassifier
 
-HEALTHY = {"engine_temp": 90.0, "vibration": 0.4, "rpm": 2000.0, "battery_voltage": 13.9,
-           "tyre_pressure_fl": 32.0, "tyre_pressure_fr": 32.0, "tyre_pressure_rl": 32.0, "tyre_pressure_rr": 32.0}
+HEALTHY = {
+    "engine_temp": 90.0,
+    "vibration": 0.4,
+    "rpm": 2000.0,
+    "battery_voltage": 13.9,
+    "tyre_pressure_fl": 32.0,
+    "tyre_pressure_fr": 32.0,
+    "tyre_pressure_rl": 32.0,
+    "tyre_pressure_rr": 32.0,
+}
 
 
 def window(n=60, **last):
@@ -23,23 +30,37 @@ def window(n=60, **last):
     rng = np.random.default_rng(1)
     df = pd.DataFrame({s: HEALTHY[s] + rng.normal(0, 0.05, n) for s in SIGNALS})
     for signal, value in last.items():
-        df.loc[n - 5:, signal] = value
+        df.loc[n - 5 :, signal] = value
     df["vehicle_id"] = 1
     df["ts"] = pd.Timestamp("2026-10-06T09:00:00Z") + pd.to_timedelta(np.arange(n) * 2, unit="s")
     return df
 
 
 def config(kind, **extra):
-    return {"version": "v1", "kind": kind, "signals": SIGNALS, "windows_s": WINDOWS_S, "features": feature_names(),
-            "threshold": 0.5, **extra}
+    return {
+        "version": "v1",
+        "kind": kind,
+        "signals": SIGNALS,
+        "windows_s": WINDOWS_S,
+        "features": feature_names(),
+        "threshold": 0.5,
+        **extra,
+    }
 
 
 @pytest.fixture
 def forest():
     features = build_features(window(400)).fillna(0)
     estimator = IsolationForest(n_estimators=50, random_state=0).fit(features)
-    return AnomalyModel(config("isolation_forest", threshold=0.48, feature_means=features.mean().to_dict(),
-                               feature_stds=features.std().to_dict()), estimator)
+    return AnomalyModel(
+        config(
+            "isolation_forest",
+            threshold=0.48,
+            feature_means=features.mean().to_dict(),
+            feature_stds=features.std().to_dict(),
+        ),
+        estimator,
+    )
 
 
 @pytest.fixture
@@ -47,7 +68,9 @@ def booster():
     df = window(400)
     hot = (np.arange(400) // 20) % 2 == 1
     df.loc[hot, "engine_temp"] += 30
-    return AnomalyModel(config("xgboost"), XGBClassifier(n_estimators=20, max_depth=2).fit(build_features(df), hot).get_booster())
+    return AnomalyModel(
+        config("xgboost"), XGBClassifier(n_estimators=20, max_depth=2).fit(build_features(df), hot).get_booster()
+    )
 
 
 def test_isolation_forest_flags_an_outlier_and_names_what_moved_most(forest):
@@ -100,9 +123,9 @@ def minio(monkeypatch):
 
 
 def test_nothing_stored_yet_means_no_model(minio):
-    assert store.load_latest() is None            # no bucket
+    assert store.load_latest() is None  # no bucket
     minio.make_bucket("models")
-    assert store.load_latest() is None            # empty bucket
+    assert store.load_latest() is None  # empty bucket
 
 
 def test_the_newest_complete_version_is_loaded(minio, booster):
@@ -122,18 +145,21 @@ def test_the_newest_complete_version_is_loaded(minio, booster):
 def test_service_loads_what_exists_and_carries_on_without_the_rest(minio, booster, monkeypatch):
     monkeypatch.setattr(main, "MODEL", None)
     monkeypatch.setattr(main, "RUL_MODELS", {})
-    main.reload_model()                           # nothing trained yet: no models, no exception
+    main.reload_model()  # nothing trained yet: no models, no exception
     assert main.MODEL is None and main.RUL_MODELS == {}
 
     store.save(booster)
-    store.upload("rul/tyres", "r1", {"version": "r1", "component": "tyres", "kind": "linear", "default_rate": 0.03}, b"{}")
+    store.upload(
+        "rul/tyres", "r1", {"version": "r1", "component": "tyres", "kind": "linear", "default_rate": 0.03}, b"{}"
+    )
     assert main.reload()["rul_models"] == {"tyres": "r1"}
     assert main.MODEL.config["version"] == "v1"
 
     def unreachable():
         raise ConnectionError("MinIO is down")
+
     monkeypatch.setattr(store, "_client", unreachable)
-    main.reload_model()                           # keeps what it had
+    main.reload_model()  # keeps what it had
     assert main.MODEL.config["version"] == "v1" and set(main.RUL_MODELS) == {"tyres"}
 
 
@@ -142,6 +168,7 @@ POINTS = [(12.97, 77.59), (12.95, 77.60), (12.99, 77.62)]
 
 def osrm_reply(snap_m=10.0, hole=False):
     """What OSRM answers: a table with every point `snap_m` from a road, or a route."""
+
     def reply(service, points, query):
         if service == "route":
             return {"routes": [{"geometry": {"coordinates": [[lng, lat] for lat, lng in points] + [[77.7, 13.0]]}}]}
@@ -150,6 +177,7 @@ def osrm_reply(snap_m=10.0, hole=False):
         if hole:
             table[0][1] = None
         return {"sources": [{"distance": snap_m}] * n, "distances": table, "durations": table}
+
     return reply
 
 
@@ -157,14 +185,19 @@ def test_road_distances_are_used_when_osrm_covers_every_point(monkeypatch):
     monkeypatch.setattr(routing, "_osrm", osrm_reply())
     dist, dur, source, note = routing.matrix(POINTS)
     assert source == "osrm" and note is None and dist[0][2] == 2000.0
-    assert routing.geometry(POINTS, source)[-1] == (13.0, 77.7)       # OSRM's line, as (lat, lng)
+    assert routing.geometry(POINTS, source)[-1] == (13.0, 77.7)  # OSRM's line, as (lat, lng)
 
 
-@pytest.mark.parametrize("reply, why", [(osrm_reply(snap_m=50_000), "outside the OSRM map region"),
-                                        (osrm_reply(hole=True), "no road between some points")])
+@pytest.mark.parametrize(
+    "reply, why",
+    [
+        (osrm_reply(snap_m=50_000), "outside the OSRM map region"),
+        (osrm_reply(hole=True), "no road between some points"),
+    ],
+)
 def test_points_osrm_cannot_route_fall_back_to_straight_lines(monkeypatch, reply, why):
     monkeypatch.setattr(routing, "_osrm", reply)
     dist, dur, source, note = routing.matrix(POINTS)
     assert source == "straight-line" and why in note
     assert dist[0][1] == pytest.approx(routing.haversine_m(POINTS[0], POINTS[1]) * routing.FALLBACK_DETOUR)
-    assert routing.geometry(POINTS, source) == POINTS                 # straight legs between the points
+    assert routing.geometry(POINTS, source) == POINTS  # straight legs between the points

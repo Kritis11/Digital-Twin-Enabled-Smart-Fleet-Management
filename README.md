@@ -412,6 +412,18 @@ GitHub Actions (`.github/workflows/ci.yml`) runs all of this on every push: the 
 with coverage, the frontend build, a check of the compose files, and the end-to-end tests against
 the production stack built from that commit. On `main` it also builds the five Docker images.
 
+## Code style
+
+Formatting and linting are checked in CI. To check or fix locally:
+
+| Code | Check | Fix |
+|---|---|---|
+| Java | `(cd backend && mvn spotless:check)` | `mvn spotless:apply` (unused imports, import order, whitespace) |
+| Python | `ruff check . && black --check .` from the repository root (`pip install ruff black`; settings in `pyproject.toml`) | `ruff check --fix . && black .` |
+| TypeScript, CSS | `(cd frontend && npm run lint && npm run format:check)` | `npm run format` (Prettier), `npx ng lint --fix` (ESLint) |
+
+Every setting and its default is listed in [docs/configuration.md](docs/configuration.md).
+
 ## Troubleshooting
 
 - **`Cannot connect to the Docker daemon`**: Docker Desktop isn't running. Start it
@@ -449,7 +461,7 @@ the production stack built from that commit. On `main` it also builds the five D
 - **Frontend shows "Cannot reach the backend"**: the backend is down, or the page is served from an
   origin other than `http://localhost:4200` (CORS).
 - **`XGBoost Library (libxgboost.dylib) could not be loaded`** (macOS): `brew install libomp`.
-- **Vehicles have no health score / backend logs `ML service unavailable`**: the ML service isn't
+- **Vehicles have no health score / backend logs `Anomaly scoring skipped this cycle`**: the ML service isn't
   running on port 8000. Rule-based statuses and alerts keep working without it.
 - **Backend logs `ML service has no anomaly model loaded`**: train one (see Retraining the models).
 - **No remaining-life bars on a vehicle**: the ML service is down or has no RUL models (`curl

@@ -4,6 +4,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -51,7 +52,7 @@ public class ReportBuilder {
             case FUEL -> fuel(start, end);
         };
         return new ReportData(type.title, String.format("%s to %s (UTC). Generated %s.", from, to,
-                Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)), sections);
+                Instant.now().truncatedTo(ChronoUnit.SECONDS)), sections);
     }
 
     private List<Section> fleetHealth(Timestamp start, Timestamp end) {

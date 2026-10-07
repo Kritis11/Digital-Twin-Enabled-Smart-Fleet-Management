@@ -1,19 +1,31 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import type { EChartsOption } from 'echarts';
+import type { EChartsOption, LineSeriesOption } from 'echarts';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import { EMPTY, catchError, combineLatest, forkJoin, switchMap, timer } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
-  DriverScore, DrivingEvent, FleetService, FuelReport, Period, RecommendationStatus, Trip, VehicleTwin, rulLevel,
+  DriverScore,
+  DrivingEvent,
+  FleetService,
+  FuelReport,
+  Period,
+  RecommendationStatus,
+  Trip,
+  VehicleTwin,
+  rulLevel,
 } from '../fleet.service';
 
 const PERIODS: Period[] = ['24h', '7d', '30d'];
 const PARTS: Record<string, string> = { brakes: 'Brake pads', battery: 'Battery', tyres: 'Tyres', engine: 'Engine' };
 const EVENT_LABELS: Record<string, string> = {
-  HARSH_BRAKING: 'Harsh braking', RAPID_ACCELERATION: 'Rapid acceleration', SPEEDING: 'Speeding',
-  SHARP_CORNERING: 'Sharp cornering', EXCESSIVE_IDLING: 'Excessive idling', FUEL_DROP: 'Fuel drop',
+  HARSH_BRAKING: 'Harsh braking',
+  RAPID_ACCELERATION: 'Rapid acceleration',
+  SPEEDING: 'Speeding',
+  SHARP_CORNERING: 'Sharp cornering',
+  EXCESSIVE_IDLING: 'Excessive idling',
+  FUEL_DROP: 'Fuel drop',
   LOW_EFFICIENCY: 'Low efficiency',
 };
 const SEVERITY_COLOURS = { LOW: '#8a94a0', MEDIUM: '#b7791f', HIGH: '#c0362c' };
@@ -33,16 +45,25 @@ const SEVERITY_COLOURS = { LOW: '#8a94a0', MEDIUM: '#b7791f', HIGH: '#c0362c' };
             <span class="rul-name">{{ row.label }}</span>
             <div class="rul-track" [attr.aria-label]="row.label + ': about ' + row.days + ' days left'">
               <div class="rul-bar" [class]="row.level" [style.width.%]="row.barPercent"></div>
-              <div class="rul-range" [style.left.%]="row.lowerPercent" [style.width.%]="row.rangePercent"
-                   title="Likely range"></div>
+              <div
+                class="rul-range"
+                [style.left.%]="row.lowerPercent"
+                [style.width.%]="row.rangePercent"
+                title="Likely range"
+              ></div>
             </div>
             <span class="rul-value">
               <strong>{{ row.days | number: '1.0-0' }} d</strong>
-              <span class="muted"> ({{ row.lower | number: '1.0-0' }}–{{ row.upper | number: '1.0-0' }}, {{ row.confidence * 100 | number: '1.0-0' }}% conf.)</span>
+              <span class="muted">
+                ({{ row.lower | number: '1.0-0' }}–{{ row.upper | number: '1.0-0' }},
+                {{ row.confidence * 100 | number: '1.0-0' }}% conf.)</span
+              >
             </span>
           </div>
         }
-        <p class="muted legend">Bar: predicted days left. Dark band: likely range (80%). Scale ends at {{ barMax }} days.</p>
+        <p class="muted legend">
+          Bar: predicted days left. Dark band: likely range (80%). Scale ends at {{ barMax }} days.
+        </p>
       }
     </section>
 
@@ -92,18 +113,32 @@ const SEVERITY_COLOURS = { LOW: '#8a94a0', MEDIUM: '#b7791f', HIGH: '#c0362c' };
         <p class="muted">Loading driving data…</p>
       } @else {
         <div class="cards">
-          <div class="card"><span>Driver score</span>
-            <strong>{{ data()!.score.score == null ? '–' : (data()!.score.score | number: '1.0-0') }}</strong></div>
-          <div class="card"><span>Distance</span><strong>{{ data()!.score.distanceKm | number: '1.0-0' }} km</strong></div>
-          <div class="card"><span>Trips</span><strong>{{ data()!.score.trips }}</strong></div>
-          <div class="card"><span>Fuel efficiency</span>
-            <strong>{{ data()!.fuel.kmPerLitre == null ? '–' : (data()!.fuel.kmPerLitre | number: '1.2-2') }} km/l</strong></div>
-          <div class="card"><span>Idling</span>
+          <div class="card">
+            <span>Driver score</span>
+            <strong>{{ data()!.score.score == null ? '–' : (data()!.score.score | number: '1.0-0') }}</strong>
+          </div>
+          <div class="card">
+            <span>Distance</span><strong>{{ data()!.score.distanceKm | number: '1.0-0' }} km</strong>
+          </div>
+          <div class="card">
+            <span>Trips</span><strong>{{ data()!.score.trips }}</strong>
+          </div>
+          <div class="card">
+            <span>Fuel efficiency</span>
+            <strong
+              >{{ data()!.fuel.kmPerLitre == null ? '–' : (data()!.fuel.kmPerLitre | number: '1.2-2') }} km/l</strong
+            >
+          </div>
+          <div class="card">
+            <span>Idling</span>
             <strong>{{ data()!.fuel.idleLitres | number: '1.0-0' }} l</strong>
-            <span>{{ data()!.fuel.idleHours | number: '1.1-1' }} h standing</span></div>
+            <span>{{ data()!.fuel.idleHours | number: '1.1-1' }} h standing</span>
+          </div>
         </div>
         <p class="muted">
-          @for (c of eventCounts(); track c.label) { {{ c.label }}: <strong>{{ c.count }}</strong> &nbsp; }
+          @for (c of eventCounts(); track c.label) {
+            {{ c.label }}: <strong>{{ c.count }}</strong> &nbsp;
+          }
         </p>
 
         @if (!data()!.events.length) {
@@ -124,21 +159,33 @@ const SEVERITY_COLOURS = { LOW: '#8a94a0', MEDIUM: '#b7791f', HIGH: '#c0362c' };
           <h3>Fuel anomalies</h3>
           <ul class="plain">
             @for (a of data()!.fuel.anomalies; track a.id) {
-              <li><span class="pill" [class]="severityClass(a)">{{ a.severity }}</span>
-                {{ a.ts | date: 'd MMM HH:mm' }} · {{ a.detail }}</li>
+              <li>
+                <span class="pill" [class]="severityClass(a)">{{ a.severity }}</span> {{ a.ts | date: 'd MMM HH:mm' }} ·
+                {{ a.detail }}
+              </li>
             }
           </ul>
         }
 
         <h3>Trips</h3>
         @if (!data()!.trips.length) {
-          <p class="muted">No completed trips in this period. A trip is recorded once the vehicle has been parked for 5 minutes.</p>
+          <p class="muted">
+            No completed trips in this period. A trip is recorded once the vehicle has been parked for 5 minutes.
+          </p>
         } @else {
           <div class="scroll tall">
             <table>
               <thead>
-                <tr><th>Started</th><th>Duration</th><th>Distance</th><th>Avg / max speed</th><th>Idle</th>
-                  <th>Fuel</th><th>Events</th><th>Score</th></tr>
+                <tr>
+                  <th>Started</th>
+                  <th>Duration</th>
+                  <th>Distance</th>
+                  <th>Avg / max speed</th>
+                  <th>Idle</th>
+                  <th>Fuel</th>
+                  <th>Events</th>
+                  <th>Score</th>
+                </tr>
               </thead>
               <tbody>
                 @for (t of data()!.trips; track t.id) {
@@ -169,7 +216,9 @@ export class VehicleInsights {
   protected readonly periods = PERIODS;
   protected readonly barMax = environment.rul.barMaxDays;
   protected readonly period = signal<Period>('7d');
-  protected readonly data = signal<{ score: DriverScore; trips: Trip[]; events: DrivingEvent[]; fuel: FuelReport } | undefined>(undefined);
+  protected readonly data = signal<
+    { score: DriverScore; trips: Trip[]; events: DrivingEvent[]; fuel: FuelReport } | undefined
+  >(undefined);
   protected readonly error = signal(false);
   protected readonly busy = signal(false);
   protected readonly actionError = signal(false);
@@ -179,19 +228,27 @@ export class VehicleInsights {
   protected readonly rulRows = computed(() => {
     const percent = (days: number) => Math.min(100, (days / this.barMax) * 100);
     return Object.entries(this.twin().rul ?? {}).map(([name, r]) => ({
-      name, label: PARTS[name] ?? name, ...r, level: rulLevel(r.days),
-      barPercent: percent(r.days), lowerPercent: percent(r.lower), rangePercent: percent(r.upper) - percent(r.lower),
+      name,
+      label: PARTS[name] ?? name,
+      ...r,
+      level: rulLevel(r.days),
+      barPercent: percent(r.days),
+      lowerPercent: percent(r.lower),
+      rangePercent: percent(r.upper) - percent(r.lower),
     }));
   });
 
   protected readonly recommendations = computed(() =>
-    this.fleet.recommendations().filter(
-      (r) => r.vehicleId === this.vehicleId() && (r.status === 'OPEN' || r.status === 'SCHEDULED'),
-    ),
+    this.fleet
+      .recommendations()
+      .filter((r) => r.vehicleId === this.vehicleId() && (r.status === 'OPEN' || r.status === 'SCHEDULED')),
   );
 
   protected readonly eventCounts = computed(() =>
-    Object.entries(this.data()?.score.eventCounts ?? {}).map(([type, count]) => ({ label: EVENT_LABELS[type] ?? type, count })),
+    Object.entries(this.data()?.score.eventCounts ?? {}).map(([type, count]) => ({
+      label: EVENT_LABELS[type] ?? type,
+      count,
+    })),
   );
 
   protected readonly timeline = computed<EChartsOption>(() => {
@@ -205,27 +262,42 @@ export class VehicleInsights {
       tooltip: { trigger: 'item', renderMode: 'richText', formatter: '{b}' },
       xAxis: { type: 'time' },
       yAxis: { type: 'category', data: types.map((t) => EVENT_LABELS[t] ?? t) },
-      series: [{
-        type: 'scatter',
-        symbolSize: 7,
-        data: events.map((e) => ({
-          name: e.detail, value: [e.ts, EVENT_LABELS[e.type] ?? e.type], itemStyle: { color: SEVERITY_COLOURS[e.severity] },
-        })),
-      }],
+      series: [
+        {
+          type: 'scatter',
+          symbolSize: 7,
+          data: events.map((e) => ({
+            name: e.detail,
+            value: [e.ts, EVENT_LABELS[e.type] ?? e.type],
+            itemStyle: { color: SEVERITY_COLOURS[e.severity] },
+          })),
+        },
+      ],
     };
   });
 
   protected readonly scoreChart = computed<EChartsOption>(() =>
-    dailyChart('Driver score per day', (this.data()?.score.daily ?? []).map((d) => [d.day, d.score]), 0, 100),
+    dailyChart(
+      'Driver score per day',
+      (this.data()?.score.daily ?? []).map((d) => [d.day, d.score]),
+      0,
+      100,
+    ),
   );
 
   protected readonly fuelChart = computed<EChartsOption>(() => {
     const fuel = this.data()?.fuel;
-    const chart = dailyChart('Fuel efficiency per day (km/l)', (fuel?.daily ?? []).map((d) => [d.day, d.kmPerLitre]));
+    const chart = dailyChart(
+      'Fuel efficiency per day (km/l)',
+      (fuel?.daily ?? []).map((d) => [d.day, d.kmPerLitre]),
+    );
     if (fuel?.baselineKmPerLitre != null) {
-      (chart.series as any[])[0].markLine = {
-        symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#5d6b7a' },
-        label: { formatter: 'baseline', fontSize: 10 }, data: [{ yAxis: fuel.baselineKmPerLitre }],
+      (chart.series as LineSeriesOption[])[0].markLine = {
+        symbol: 'none',
+        silent: true,
+        lineStyle: { type: 'dashed', color: '#5d6b7a' },
+        label: { formatter: 'baseline', fontSize: 10 },
+        data: [{ yAxis: fuel.baselineKmPerLitre }],
       };
     }
     return chart;

@@ -81,7 +81,7 @@ public class MlService {
             }
         } catch (Exception e) {
             // One warning per cycle, not per vehicle: if the service is down it is down for all of them.
-            log.warn("ML service unavailable, keeping rule-based statuses only: {}", e.getMessage());
+            log.warn("Anomaly scoring skipped this cycle, rule-based statuses carry on: {}", e.toString());
         }
     }
 
@@ -112,7 +112,7 @@ public class MlService {
                 }
             }
         } catch (Exception e) {
-            log.warn("ML service unavailable, remaining useful life not refreshed: {}", e.getMessage());
+            log.warn("Remaining useful life not refreshed this cycle: {}", e.toString());
         }
     }
 

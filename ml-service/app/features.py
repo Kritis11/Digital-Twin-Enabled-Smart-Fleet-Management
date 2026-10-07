@@ -3,8 +3,14 @@
 import pandas as pd
 
 SIGNALS = [
-    "engine_temp", "vibration", "rpm", "battery_voltage",
-    "tyre_pressure_fl", "tyre_pressure_fr", "tyre_pressure_rl", "tyre_pressure_rr",
+    "engine_temp",
+    "vibration",
+    "rpm",
+    "battery_voltage",
+    "tyre_pressure_fl",
+    "tyre_pressure_fr",
+    "tyre_pressure_rl",
+    "tyre_pressure_rr",
 ]
 WINDOWS_S = [30, 120]
 STATS = ["mean", "std", "min", "max", "roc"]

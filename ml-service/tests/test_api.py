@@ -1,22 +1,31 @@
 import numpy as np
 import pandas as pd
 import pytest
-from fastapi.testclient import TestClient
-from xgboost import XGBClassifier
-
 from app import main
 from app.features import SIGNALS, WINDOWS_S, build_features, feature_names
 from app.model import AnomalyModel
+from fastapi.testclient import TestClient
+from xgboost import XGBClassifier
 
-HEALTHY = {"engine_temp": 90.0, "vibration": 0.4, "rpm": 2000.0, "battery_voltage": 13.9,
-           "tyre_pressure_fl": 32.0, "tyre_pressure_fr": 32.0, "tyre_pressure_rl": 32.0, "tyre_pressure_rr": 32.0}
+HEALTHY = {
+    "engine_temp": 90.0,
+    "vibration": 0.4,
+    "rpm": 2000.0,
+    "battery_voltage": 13.9,
+    "tyre_pressure_fl": 32.0,
+    "tyre_pressure_fr": 32.0,
+    "tyre_pressure_rl": 32.0,
+    "tyre_pressure_rr": 32.0,
+}
 
 
 def readings(n=30, **override):
     """n readings 2 s apart; `override` replaces signal values in the last 5."""
     t0 = pd.Timestamp("2026-10-06T10:00:00Z")
-    return [{"ts": (t0 + pd.Timedelta(seconds=2 * i)).isoformat(), **HEALTHY, **(override if i >= n - 5 else {})}
-            for i in range(n)]
+    return [
+        {"ts": (t0 + pd.Timedelta(seconds=2 * i)).isoformat(), **HEALTHY, **(override if i >= n - 5 else {})}
+        for i in range(n)
+    ]
 
 
 @pytest.fixture
@@ -38,8 +47,17 @@ def model():
     hot = (np.arange(n) // 20) % 2 == 1
     df.loc[hot, "engine_temp"] += 30
     booster = XGBClassifier(n_estimators=20, max_depth=2).fit(build_features(df), hot).get_booster()
-    return AnomalyModel({"version": "test", "kind": "xgboost", "signals": SIGNALS, "windows_s": WINDOWS_S,
-                         "features": feature_names(), "threshold": 0.5}, booster)
+    return AnomalyModel(
+        {
+            "version": "test",
+            "kind": "xgboost",
+            "signals": SIGNALS,
+            "windows_s": WINDOWS_S,
+            "features": feature_names(),
+            "threshold": 0.5,
+        },
+        booster,
+    )
 
 
 def test_anomaly_returns_503_without_a_model(client):
@@ -74,11 +92,14 @@ def test_health_score_formula(client):
     perfect = client.post("/health-score", json={"vehicle_id": 1, "components": {"engine": "OK"}}).json()
     assert perfect == {"vehicle_id": 1, "health_score": 100.0, "deductions": {}}
 
-    r = client.post("/health-score", json={
-        "vehicle_id": 1,
-        "components": {"engine": "CRITICAL", "battery": "WARNING", "fuel": "OK"},
-        "anomaly_score": 0.5,
-    }).json()
+    r = client.post(
+        "/health-score",
+        json={
+            "vehicle_id": 1,
+            "components": {"engine": "CRITICAL", "battery": "WARNING", "fuel": "OK"},
+            "anomaly_score": 0.5,
+        },
+    ).json()
     assert r["deductions"] == {"engine": 25.0, "battery": 10.0, "anomaly": 15.0}
     assert r["health_score"] == 50.0
 

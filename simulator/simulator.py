@@ -2,7 +2,8 @@
 """Simulated vehicle telemetry.
 
 Live mode publishes to fleet/{vehicleId}/telemetry as JSON and listens on fleet/{vehicleId}/maintenance
-for {"component": ...} commands that reset a component's wear.
+for {"component": ...} commands that reset a component's wear, and on fleet/{vehicleId}/fault for
+{"fault": ...} commands that start one of the faults there and then (for demos).
 
 Fast-forward mode (--fast-forward DAYS) generates history ending now and writes it straight to
 TimescaleDB, with component failures and the maintenance records that reset wear.
@@ -12,14 +13,13 @@ Run `python simulator.py --self-check` to sanity-check the model without a broke
 """
 
 import argparse
-import io
 import json
 import math
 import os
 import random
 import signal
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import paho.mqtt.client as mqtt
@@ -45,21 +45,49 @@ PROFILE_BY_VEHICLE = {1: "calm", 2: "normal", 3: "aggressive", 4: "normal", 5: "
 PROFILES = {
     # cruise: target speeds picked from (km/h); idle_weight: how often the target is 0;
     # harsh_*: events per driving hour; corner: speed carried through a turn; fuel/wear: multipliers
-    "calm":       {"cruise": [20, 40, 55, 65],  "idle_weight": 0.5, "harsh_brake": 0.3, "harsh_accel": 0.3, "corner": 15, "fuel": 0.93, "wear": 0.85},
-    "normal":     {"cruise": [20, 40, 60, 80],  "idle_weight": 1.0, "harsh_brake": 1.5, "harsh_accel": 1.5, "corner": 26, "fuel": 1.00, "wear": 1.00},
-    "aggressive": {"cruise": [30, 60, 85, 100], "idle_weight": 2.0, "harsh_brake": 6.0, "harsh_accel": 7.0, "corner": 42, "fuel": 1.20, "wear": 1.30},
+    "calm": {
+        "cruise": [20, 40, 55, 65],
+        "idle_weight": 0.5,
+        "harsh_brake": 0.3,
+        "harsh_accel": 0.3,
+        "corner": 15,
+        "fuel": 0.93,
+        "wear": 0.85,
+    },
+    "normal": {
+        "cruise": [20, 40, 60, 80],
+        "idle_weight": 1.0,
+        "harsh_brake": 1.5,
+        "harsh_accel": 1.5,
+        "corner": 26,
+        "fuel": 1.00,
+        "wear": 1.00,
+    },
+    "aggressive": {
+        "cruise": [30, 60, 85, 100],
+        "idle_weight": 2.0,
+        "harsh_brake": 6.0,
+        "harsh_accel": 7.0,
+        "corner": 42,
+        "fuel": 1.20,
+        "wear": 1.30,
+    },
 }
 
 # Wearing components: telemetry field, value when new, value at which the part fails.
 # Wear is deliberately fast (a part lasts weeks, not years) so 90 days holds several lifecycles.
 COMPONENTS = {
-    "brakes":  {"field": "brake_pad_wear", "new": 0.0,   "fail": 95.0, "noise": 0.3},
+    "brakes": {"field": "brake_pad_wear", "new": 0.0, "fail": 95.0, "noise": 0.3},
     "battery": {"field": "battery_health", "new": 100.0, "fail": 45.0, "noise": 0.4},
-    "tyres":   {"field": "tyre_tread",     "new": 8.0,   "fail": 1.6,  "noise": 0.03},
-    "engine":  {"field": "engine_health",  "new": 100.0, "fail": 40.0, "noise": 0.4},
+    "tyres": {"field": "tyre_tread", "new": 8.0, "fail": 1.6, "noise": 0.03},
+    "engine": {"field": "engine_health", "new": 100.0, "fail": 40.0, "noise": 0.4},
 }
-MAINTENANCE_TYPE = {"brakes": "Brake pad replacement", "battery": "Battery replacement",
-                    "tyres": "Tyre replacement", "engine": "Engine service"}
+MAINTENANCE_TYPE = {
+    "brakes": "Brake pad replacement",
+    "battery": "Battery replacement",
+    "tyres": "Tyre replacement",
+    "engine": "Engine service",
+}
 # Share of lifecycles that end in a preventive service before the part fails.
 PREVENTIVE_SHARE = 0.2
 
@@ -101,8 +129,14 @@ class Vehicle:
     # -- state carried from fast-forward into live mode --
 
     def state(self) -> dict:
-        return {"wear": self.wear, "wear_factor": self.wear_factor, "part_factor": self.part_factor,
-                "odometer_km": self.odometer_km, "engine_hours": self.engine_hours, "fuel": self.fuel}
+        return {
+            "wear": self.wear,
+            "wear_factor": self.wear_factor,
+            "part_factor": self.part_factor,
+            "odometer_km": self.odometer_km,
+            "engine_hours": self.engine_hours,
+            "fuel": self.fuel,
+        }
 
     def restore(self, state: dict) -> None:
         for key, value in state.items():
@@ -149,7 +183,7 @@ class Vehicle:
             self.fuel = max(6.0, self.fuel - rng.uniform(8, 15))
 
         # Speed drifts towards a target that changes now and then (traffic, stops).
-        if rng.random() < 1 - 0.95 ** ticks:
+        if rng.random() < 1 - 0.95**ticks:
             idle = rng.random() < 0.2 * profile["idle_weight"]
             self.target_speed = 0.0 if idle else rng.choice(profile["cruise"]) + rng.uniform(-5, 5)
         prev_speed = self.speed
@@ -194,16 +228,25 @@ class Vehicle:
         # Wear. Each part wears faster as it nears the end of its life.
         w, f = profile["wear"], {c: self.wear_factor[c] * self.part_factor[c] for c in COMPONENTS}
         brakes_used = used("brakes", self.wear["brakes"])
-        self.wear["brakes"] += f["brakes"] * (km * 0.0035 + harsh_brakes * 0.06 + braking_kmh * 0.0004) * (1 + 0.6 * brakes_used ** 2)
+        self.wear["brakes"] += (
+            f["brakes"] * (km * 0.0035 + harsh_brakes * 0.06 + braking_kmh * 0.0004) * (1 + 0.6 * brakes_used**2)
+        )
         self.wear["tyres"] -= f["tyres"] * km * 0.0007 * w * (1 + 0.4 * used("tyres", self.wear["tyres"]))
-        self.wear["engine"] -= f["engine"] * (dt / 3600) * 0.24 * w * (1 + 0.5 * used("engine", self.wear["engine"]) ** 2)
+        self.wear["engine"] -= (
+            f["engine"] * (dt / 3600) * 0.24 * w * (1 + 0.5 * used("engine", self.wear["engine"]) ** 2)
+        )
         self.age(dt / 3600)
 
         rpm = 800 + self.speed * 28 + rng.gauss(0, 40)
         target_temp = 88 + self.speed * 0.08 + (30 if fault == "overheating" else 0)
-        self.engine_temp += (target_temp - self.engine_temp) * (1 - 0.8 ** ticks) + rng.gauss(0, 0.3)
-        vibration = 0.2 + self.speed * 0.004 + abs(rng.gauss(0, 0.05)) + (rng.uniform(2, 4) if fault == "vibration_spike" else 0)
-        battery = (rng.uniform(11.2, 11.8) if fault == "low_battery" else 13.9 + rng.gauss(0, 0.1))
+        self.engine_temp += (target_temp - self.engine_temp) * (1 - 0.8**ticks) + rng.gauss(0, 0.3)
+        vibration = (
+            0.2
+            + self.speed * 0.004
+            + abs(rng.gauss(0, 0.05))
+            + (rng.uniform(2, 4) if fault == "vibration_spike" else 0)
+        )
+        battery = rng.uniform(11.2, 11.8) if fault == "low_battery" else 13.9 + rng.gauss(0, 0.1)
         tyres = {t: p + rng.gauss(0, 0.1) for t, p in self.tyres.items()}
         if fault == "low_tyre_pressure":
             tyres[self.fault_tyre] = rng.uniform(18, 22)
@@ -221,7 +264,7 @@ class Vehicle:
 
         payload = {
             "vehicle_id": self.id,
-            "ts": (ts or datetime.now(timezone.utc)).isoformat(timespec="milliseconds"),
+            "ts": (ts or datetime.now(UTC)).isoformat(timespec="milliseconds"),
             "lat": round(lat, 6),
             "lng": round(lng, 6),
             "speed": round(self.speed, 1),
@@ -248,10 +291,30 @@ class Vehicle:
 # ---------------------------------------------------------------- fast-forward
 
 TELEMETRY_COLUMNS = [
-    "vehicle_id", "ts", "lat", "lng", "speed", "engine_temp", "rpm", "battery_voltage", "fuel_level", "vibration",
-    "tyre_pressure_fl", "tyre_pressure_fr", "tyre_pressure_rl", "tyre_pressure_rr", "brake_pad_wear",
-    "battery_health", "tyre_tread", "engine_health", "odometer_km", "engine_hours", "accel_min", "accel_max",
-    "dtc_codes", "injected_fault",
+    "vehicle_id",
+    "ts",
+    "lat",
+    "lng",
+    "speed",
+    "engine_temp",
+    "rpm",
+    "battery_voltage",
+    "fuel_level",
+    "vibration",
+    "tyre_pressure_fl",
+    "tyre_pressure_fr",
+    "tyre_pressure_rl",
+    "tyre_pressure_rr",
+    "brake_pad_wear",
+    "battery_health",
+    "tyre_tread",
+    "engine_health",
+    "odometer_km",
+    "engine_hours",
+    "accel_min",
+    "accel_max",
+    "dtc_codes",
+    "injected_fault",
 ]
 
 
@@ -271,9 +334,19 @@ def generate_history(vehicles: list[Vehicle], days: int, step_s: float, end: dat
     for day in range(days + 1):
         midnight = start_day + timedelta(days=day)
         for v in vehicles:
-            def replace(component: str, cause: str, when: datetime) -> None:
-                maintenance.append((v.id, component, MAINTENANCE_TYPE[component], cause, when,
-                                    f"Simulated {cause.lower()} maintenance", round(rng.uniform(3000, 40000), 2)))
+
+            def replace(component: str, cause: str, when: datetime, v: Vehicle = v) -> None:
+                maintenance.append(
+                    (
+                        v.id,
+                        component,
+                        MAINTENANCE_TYPE[component],
+                        cause,
+                        when,
+                        f"Simulated {cause.lower()} maintenance",
+                        round(rng.uniform(3000, 40000), 2),
+                    )
+                )
                 v.service(component)
                 plan[(v.id, component)] = _service_plan(rng)
 
@@ -319,23 +392,33 @@ def _service_plan(rng: random.Random) -> float | None:
 def fast_forward(args, rng: random.Random) -> None:
     import psycopg  # only fast-forward talks to the database
 
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = (end - timedelta(days=args.fast_forward)).replace(hour=0, minute=0, second=0, microsecond=0)
     vehicles = [Vehicle(i, rng) for i in range(1, args.vehicles + 1)]
-    dsn = (f"host={os.getenv('POSTGRES_HOST', 'localhost')} port={os.getenv('POSTGRES_PORT', '5432')} "
-           f"dbname={os.environ['POSTGRES_DB']} user={os.environ['POSTGRES_USER']} password={os.environ['POSTGRES_PASSWORD']}")
+    dsn = (
+        f"host={os.getenv('POSTGRES_HOST', 'localhost')} port={os.getenv('POSTGRES_PORT', '5432')} "
+        f"dbname={os.environ['POSTGRES_DB']} user={os.environ['POSTGRES_USER']} password={os.environ['POSTGRES_PASSWORD']}"
+    )
     with psycopg.connect(dsn) as conn, conn.cursor() as cur:
         existing = cur.execute("SELECT count(*) FROM telemetry WHERE ts >= %s", (start,)).fetchone()[0]
         if existing and not args.replace:
-            raise SystemExit(f"{existing} telemetry rows already exist since {start:%Y-%m-%d}. History would overlap them; "
-                             "re-run with --replace to delete them (and the derived trips, events and maintenance records) first.")
+            raise SystemExit(
+                f"{existing} telemetry rows already exist since {start:%Y-%m-%d}. History would overlap them; "
+                "re-run with --replace to delete them (and the derived trips, events and maintenance records) first."
+            )
         t0 = time.time()
         rows, maintenance = generate_history(vehicles, args.fast_forward, args.step, end, rng)
-        print(f"Simulated {args.fast_forward} days for {len(vehicles)} vehicles in {time.time() - t0:.0f}s: "
-              f"{len(rows)} telemetry rows, {len(maintenance)} maintenance records")
+        print(
+            f"Simulated {args.fast_forward} days for {len(vehicles)} vehicles in {time.time() - t0:.0f}s: "
+            f"{len(rows)} telemetry rows, {len(maintenance)} maintenance records"
+        )
         if args.replace:
-            for table, column in (("telemetry", "ts"), ("maintenance_records", "performed_at"),
-                                  ("trips", "started_at"), ("driving_events", "ts")):
+            for table, column in (
+                ("telemetry", "ts"),
+                ("maintenance_records", "performed_at"),
+                ("trips", "started_at"),
+                ("driving_events", "ts"),
+            ):
                 if cur.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0]:
                     cur.execute(f"DELETE FROM {table} WHERE {column} >= %s", (start,))
         with cur.copy(f"COPY telemetry ({', '.join(TELEMETRY_COLUMNS)}) FROM STDIN") as copy:
@@ -344,7 +427,9 @@ def fast_forward(args, rng: random.Random) -> None:
                 copy.write_row([r[c] for c in TELEMETRY_COLUMNS])
         cur.executemany(
             "INSERT INTO maintenance_records (vehicle_id, component, type, cause, performed_at, description, cost) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)", maintenance)
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            maintenance,
+        )
     failures = sum(1 for m in maintenance if m[3] == "FAILURE")
     print(f"Wrote history to TimescaleDB ({failures} failures, {len(maintenance) - failures} preventive services).")
     STATE_FILE.write_text(json.dumps({str(v.id): v.state() for v in vehicles}, indent=1))
@@ -353,6 +438,7 @@ def fast_forward(args, rng: random.Random) -> None:
 
 
 # ---------------------------------------------------------------- self-check and live mode
+
 
 def self_check() -> None:
     rng = random.Random(1)
@@ -365,7 +451,9 @@ def self_check() -> None:
     assert rows[-1]["odometer_km"] > rows[0]["odometer_km"]
     assert {r["injected_fault"] for r in rows} == {None, *FAULTS}
     assert all(r["battery_voltage"] < 12 for r in rows if r["injected_fault"] == "low_battery")
-    assert all(min(r[f"tyre_pressure_{t}"] for t in TYRES) < 23 for r in rows if r["injected_fault"] == "low_tyre_pressure")
+    assert all(
+        min(r[f"tyre_pressure_{t}"] for t in TYRES) < 23 for r in rows if r["injected_fault"] == "low_tyre_pressure"
+    )
     assert max(r["engine_temp"] for r in rows if r["injected_fault"] == "overheating") > 110
     assert all(r["speed"] == 0 for r in rows if r["injected_fault"] == "fuel_theft")
     healthy = [r for r in rows if r["injected_fault"] is None]
@@ -381,12 +469,13 @@ def self_check() -> None:
         km0 = d.odometer_km
         n = sum(d.step(30.0, 0.0)["accel_min"] <= -3 for _ in range(20000))
         return n / (d.odometer_km - km0) * 100
+
     assert harsh_per_100km(3) > 4 * harsh_per_100km(1)
 
     # History: parts fail and get replaced, wear resets, and rows stay in time order per vehicle.
     hrng = random.Random(5)
     fleet = [Vehicle(i, hrng) for i in (1, 3)]
-    history, maintenance = generate_history(fleet, 60, 30.0, datetime(2026, 6, 1, tzinfo=timezone.utc), hrng)
+    history, maintenance = generate_history(fleet, 60, 30.0, datetime(2026, 6, 1, tzinfo=UTC), hrng)
     assert {m[1] for m in maintenance} == set(COMPONENTS), "every part should need work within 60 days"
     assert {m[3] for m in maintenance} <= {"FAILURE", "PREVENTIVE"} and any(m[3] == "FAILURE" for m in maintenance)
     for vehicle_id in (1, 3):
@@ -396,24 +485,36 @@ def self_check() -> None:
     fleet[0].wear["brakes"] = 90.0
     fleet[0].service("brakes")
     assert fleet[0].wear["brakes"] == 0.0
-    print(f"self-check ok: {len(rows)} live ticks ({len(rows) - len(healthy)} faulty), "
-          f"{len(history)} history rows, {len(maintenance)} maintenance records")
+    print(
+        f"self-check ok: {len(rows)} live ticks ({len(rows) - len(healthy)} faulty), "
+        f"{len(history)} history rows, {len(maintenance)} maintenance records"
+    )
 
 
 def main() -> None:
     load_dotenv(ROOT / ".env")
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--vehicles", type=int, default=int(os.getenv("SIM_VEHICLES", "5")), help="number of vehicles (ids 1..N)")
-    p.add_argument("--interval", type=float, default=float(os.getenv("SIM_INTERVAL", "2")), help="seconds between publishes")
-    p.add_argument("--fault-rate", type=float, default=float(os.getenv("SIM_FAULT_RATE", "0.02")),
-                   help="chance per vehicle per tick of starting a fault (0..1)")
+    p.add_argument(
+        "--vehicles", type=int, default=int(os.getenv("SIM_VEHICLES", "5")), help="number of vehicles (ids 1..N)"
+    )
+    p.add_argument(
+        "--interval", type=float, default=float(os.getenv("SIM_INTERVAL", "2")), help="seconds between publishes"
+    )
+    p.add_argument(
+        "--fault-rate",
+        type=float,
+        default=float(os.getenv("SIM_FAULT_RATE", "0.02")),
+        help="chance per vehicle per tick of starting a fault (0..1)",
+    )
     p.add_argument("--host", default=os.getenv("MQTT_HOST", "localhost"))
     p.add_argument("--port", type=int, default=int(os.getenv("MQTT_PORT", "1883")))
     p.add_argument("--seed", type=int, default=None, help="random seed for repeatable runs")
     p.add_argument("--self-check", action="store_true", help="run model assertions and exit (no broker needed)")
     p.add_argument("--fast-forward", type=int, metavar="DAYS", help="write DAYS of history to TimescaleDB and exit")
     p.add_argument("--step", type=float, default=30.0, help="seconds between readings in fast-forward history")
-    p.add_argument("--replace", action="store_true", help="with --fast-forward: delete existing data in the period first")
+    p.add_argument(
+        "--replace", action="store_true", help="with --fast-forward: delete existing data in the period first"
+    )
     p.add_argument("--fresh", action="store_true", help="live mode: ignore saved wear state and start new vehicles")
     args = p.parse_args()
 
@@ -435,9 +536,17 @@ def main() -> None:
 
     def on_message(_client, _userdata, message) -> None:
         # fleet/{id}/maintenance {"component": "brakes"}: the backend says the part was replaced.
+        # fleet/{id}/fault {"fault": "overheating"}: start that fault now, for demos (scripts/demo-fault.sh).
         try:
-            vehicle = vehicles[int(message.topic.split("/")[1])]
-            component = json.loads(message.payload)["component"]
+            _, vehicle_id, command = message.topic.split("/")
+            vehicle, body = vehicles[int(vehicle_id)], json.loads(message.payload)
+            if command == "fault":
+                if body["fault"] not in FAULTS:
+                    return
+                vehicle.fault, vehicle.fault_ticks, vehicle.fault_tyre = body["fault"], 30, TYRES[0]
+                print(f"vehicle {vehicle.id}: {body['fault']} (requested)")
+                return
+            component = body["component"]
         except (KeyError, ValueError, IndexError):
             return
         vehicle.service(component)
@@ -449,11 +558,13 @@ def main() -> None:
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="fleet-twin-simulator")
     client.username_pw_set(os.getenv("MQTT_USERNAME"), os.getenv("MQTT_PASSWORD"))
     client.on_message = on_message
-    client.on_connect = lambda c, *_: c.subscribe("fleet/+/maintenance", qos=1)
+    client.on_connect = lambda c, *_: c.subscribe([("fleet/+/maintenance", 1), ("fleet/+/fault", 1)])
     client.connect(args.host, args.port)
     client.loop_start()
-    print(f"Publishing {args.vehicles} vehicles every {args.interval}s to {args.host}:{args.port} "
-          f"(fault rate {args.fault_rate}). Ctrl+C to stop.")
+    print(
+        f"Publishing {args.vehicles} vehicles every {args.interval}s to {args.host}:{args.port} "
+        f"(fault rate {args.fault_rate}). Ctrl+C to stop."
+    )
     try:
         while True:
             for v in vehicles.values():

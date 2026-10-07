@@ -40,14 +40,18 @@ function day(daysAgo: number): string {
 
     @if (canGenerate) {
       <form class="panel filters" (ngSubmit)="generate()">
-        <label>Report
+        <label
+          >Report
           <select name="type" [(ngModel)]="type">
-            @for (t of types; track t[0]) { <option [value]="t[0]">{{ t[1] }}</option> }
+            @for (t of types; track t[0]) {
+              <option [value]="t[0]">{{ t[1] }}</option>
+            }
           </select>
         </label>
         <label>From <input name="from" type="date" [(ngModel)]="from" [max]="to()" required /></label>
         <label>To <input name="to" type="date" [(ngModel)]="to" [min]="from()" required /></label>
-        <label>Format
+        <label
+          >Format
           <select name="format" [(ngModel)]="format">
             <option value="PDF">PDF</option>
             <option value="XLSX">Excel</option>
@@ -67,7 +71,15 @@ function day(daysAgo: number): string {
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>Generated</th><th>Report</th><th>Period</th><th>Format</th><th>Size</th><th>By</th><th></th></tr>
+              <tr>
+                <th>Generated</th>
+                <th>Report</th>
+                <th>Period</th>
+                <th>Format</th>
+                <th>Size</th>
+                <th>By</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               @for (r of reports(); track r.id) {

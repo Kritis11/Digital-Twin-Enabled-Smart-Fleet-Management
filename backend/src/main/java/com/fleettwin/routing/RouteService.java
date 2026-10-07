@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -139,7 +140,7 @@ public class RouteService {
                 excluded.add(new Excluded(twin.getId(), twin.getRegistration(), reasons));
             }
         }
-        List<Integer> everyStop = java.util.stream.IntStream.range(0, req.stops().size()).boxed().toList();
+        List<Integer> everyStop = IntStream.range(0, req.stops().size()).boxed().toList();
         if (eligible.isEmpty()) {
             return new OptimiseResponse(departAt, List.of(), excluded, everyStop, 0, 0, null,
                     "No vehicle is fit to be assigned.");

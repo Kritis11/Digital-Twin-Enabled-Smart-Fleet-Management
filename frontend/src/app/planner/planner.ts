@@ -16,7 +16,8 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
     </div>
 
     <section class="panel filters" aria-label="Filters">
-      <label>Status
+      <label
+        >Status
         <select [(ngModel)]="status">
           <option value="ACTIVE">Open and scheduled</option>
           <option value="OPEN">Open</option>
@@ -26,7 +27,8 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
           <option value="">All</option>
         </select>
       </label>
-      <label>Priority
+      <label
+        >Priority
         <select [(ngModel)]="priority">
           <option value="">Any</option>
           <option value="URGENT">Urgent</option>
@@ -35,7 +37,8 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
           <option value="LOW">Low</option>
         </select>
       </label>
-      <label>Vehicle
+      <label
+        >Vehicle
         <select [(ngModel)]="vehicleId">
           <option [ngValue]="null">Any</option>
           @for (twin of fleet.twins(); track twin.id) {
@@ -56,14 +59,28 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>Priority</th><th>By</th><th>Vehicle</th><th>Action</th><th>Why</th><th>Status</th><th></th></tr>
+              <tr>
+                <th>Priority</th>
+                <th>By</th>
+                <th>Vehicle</th>
+                <th>Action</th>
+                <th>Why</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               @for (r of shown(); track r.id) {
                 <tr [class.acknowledged]="r.status === 'DONE' || r.status === 'DISMISSED'">
-                  <td><span class="pill" [class]="r.priority.toLowerCase()">{{ r.priority }}</span></td>
+                  <td>
+                    <span class="pill" [class]="r.priority.toLowerCase()">{{ r.priority }}</span>
+                  </td>
                   <td class="nowrap">{{ r.recommendedBy | date: 'd MMM' }}</td>
-                  <td><a [routerLink]="['/vehicles', r.vehicleId]">{{ registrations().get(r.vehicleId) ?? r.vehicleId }}</a></td>
+                  <td>
+                    <a [routerLink]="['/vehicles', r.vehicleId]">{{
+                      registrations().get(r.vehicleId) ?? r.vehicleId
+                    }}</a>
+                  </td>
                   <td>{{ r.action }}</td>
                   <td>{{ r.reason }}</td>
                   <td>{{ r.status }}</td>
@@ -97,13 +114,16 @@ export class Planner {
   protected readonly registrations = computed(() => new Map(this.fleet.twins().map((t) => [t.id, t.registration])));
   /** The backend already sorts by priority, then recommended-by date. */
   protected readonly shown = computed(() =>
-    this.fleet.recommendations().filter(
-      (r) =>
-        (!this.status() || r.status === this.status() ||
-          (this.status() === 'ACTIVE' && (r.status === 'OPEN' || r.status === 'SCHEDULED'))) &&
-        (!this.priority() || r.priority === this.priority()) &&
-        (this.vehicleId() == null || r.vehicleId === this.vehicleId()),
-    ),
+    this.fleet
+      .recommendations()
+      .filter(
+        (r) =>
+          (!this.status() ||
+            r.status === this.status() ||
+            (this.status() === 'ACTIVE' && (r.status === 'OPEN' || r.status === 'SCHEDULED'))) &&
+          (!this.priority() || r.priority === this.priority()) &&
+          (this.vehicleId() == null || r.vehicleId === this.vehicleId()),
+      ),
   );
 
   constructor() {

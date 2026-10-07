@@ -1,0 +1,20 @@
+# Formatting and linting for all Python in the repository (ml-service, simulator, scripts).
+#   ruff check .        lint
+#   black --check .     formatting
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["ml-service/training/data"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import order, bugbear, pyupgrade, simplifications
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = [
+    "E501",    # line length is black's job
+    "B008",    # FastAPI's Depends()/Field() defaults
+    "SIM108",  # a ternary is not always clearer than an if/else
+]
