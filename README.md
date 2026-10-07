@@ -256,7 +256,7 @@ npm start                     # http://localhost:4200, Ctrl+C to stop
 
 The sidebar shows "Live" while the WebSocket is connected. Backend and WebSocket URLs, the health
 colour bands, the remaining-life colour bands, the refresh intervals and the map tiles are in
-`frontend/src/environments/environment.ts`.
+`frontend/src/environments/settings.ts`.
 
 ## Retraining the models
 

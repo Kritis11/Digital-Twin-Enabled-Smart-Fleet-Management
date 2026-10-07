@@ -1,0 +1,14 @@
+# Optional overlay: publishes MQTT over TLS on port 8883 for real devices.
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.mqtt-tls.yml up -d
+# It reuses the web certificate (the `certs` volume nginx maintains). Mosquitto reads it at start, so
+# restart it after a renewal: `docker compose ... restart mosquitto` (Let's Encrypt renews every ~60 days).
+services:
+  mosquitto:
+    ports:
+      - "${MQTT_TLS_PORT:-8883}:8883"
+    volumes:
+      - ./infra/mosquitto/mosquitto-tls.conf:/mosquitto/config/mosquitto.conf:ro
+      - certs:/mosquitto/certs:ro
+    depends_on:
+      nginx:
+        condition: service_healthy   # nginx creates the certificate files on its first start

@@ -177,13 +177,16 @@ springdoc:
     path: /swagger-ui.html
 
 management:
+  server:
+    # Production gives actuator its own, unpublished port (see SecurityConfig). Same port in development.
+    port: ${MANAGEMENT_PORT:${server.port}}
   health:
     mail:
       enabled: false              # email is optional; an unreachable SMTP server must not mark the backend unhealthy
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: always

@@ -1,0 +1,285 @@
+# The whole stack on one Linux server. Only nginx is published (80 and 443); everything else talks
+# over the internal Docker network.
+#
+#   cp .env.prod.example .env.prod      # then fill it in
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# Step-by-step instructions, backups and restore: docs/deployment.md
+name: fleet-twin-prod
+
+x-service: &service
+  restart: unless-stopped
+  networks: [internal]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }   # at most 50 MB of logs per container
+
+services:
+  nginx:
+    <<: *service
+    build: ./frontend
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - certs:/etc/nginx/certs
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+
+  # Gets and renews the Let's Encrypt certificate (HTTP-01 through nginx). Without LETSENCRYPT_EMAIL it
+  # does nothing and nginx keeps its self-signed certificate, which is what you want on a test machine.
+  certbot:
+    <<: *service
+    image: certbot/certbot:v5.8.0
+    environment:
+      DOMAIN: ${DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      LETSENCRYPT_STAGING: ${LETSENCRYPT_STAGING:-}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        if [ -z "$$LETSENCRYPT_EMAIL" ]; then
+          echo "LETSENCRYPT_EMAIL is not set: no certificate requested, nginx keeps its self-signed one"
+          exec sleep infinity
+        fi
+        trap exit TERM
+        while :; do
+          # issues the first certificate, later renews it once it is within 30 days of expiry
+          certbot certonly --webroot -w /var/www/certbot -d "$$DOMAIN" --email "$$LETSENCRYPT_EMAIL" \
+            --agree-tos --non-interactive --keep-until-expiring $${LETSENCRYPT_STAGING:+--staging}
+          sleep 12h & wait $$!
+        done
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    depends_on:
+      nginx:
+        condition: service_healthy
+
+  backend:
+    <<: *service
+    build: ./backend
+    environment:
+      POSTGRES_HOST: timescaledb
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      MQTT_HOST: mosquitto
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      ML_SERVICE_URL: http://ml-service:8000
+      MANAGEMENT_PORT: 8081
+      CORS_ALLOWED_ORIGINS: https://${DOMAIN}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      REPORTS_EMAIL_ENABLED: ${REPORTS_EMAIL_ENABLED:-false}
+      REPORTS_EMAIL_TO: ${REPORTS_EMAIL_TO:-}
+      REPORTS_EMAIL_FROM: ${REPORTS_EMAIL_FROM:-fleet-twin@localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    depends_on:
+      timescaledb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mosquitto: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  ml-service:
+    <<: *service
+    build: ./ml-service
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      POSTGRES_HOST: timescaledb
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      OSRM_URL: http://osrm:5000
+    depends_on:
+      timescaledb: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  timescaledb:
+    <<: *service
+    image: timescale/timescaledb:2.30.2-pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  # Devices are not reachable from outside by default. To accept real vehicles over TLS on 8883,
+  # add the overlay docker-compose.mqtt-tls.yml.
+  mosquitto:
+    <<: *service
+    image: eclipse-mosquitto:2.0.22
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+    command:
+      - sh
+      - -c
+      - |
+        mosquitto_passwd -b -c /mosquitto/passwd "$$MQTT_USERNAME" "$$MQTT_PASSWORD" &&
+        chown mosquitto:mosquitto /mosquitto/passwd && chmod 0600 /mosquitto/passwd &&
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -u \"$$MQTT_USERNAME\" -P \"$$MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 3"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    <<: *service
+    image: cgr.dev/chainguard/minio@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r line <&3 && [[ $$line == *200* ]]"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    <<: *service
+    image: redis:7.4.11-alpine
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  # Road distances for route optimisation; see infra/docker-compose.yml for how the region is prepared.
+  osrm:
+    <<: *service
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+    environment:
+      OSRM_PBF_URL: ${OSRM_PBF_URL}
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        cd /data
+        if [ "$$(cat region.url 2>/dev/null)" != "$$OSRM_PBF_URL" ]; then
+          rm -f region.*
+          wget -O region.osm.pbf "$$OSRM_PBF_URL"
+          osrm-extract -p /opt/car.lua region.osm.pbf
+          osrm-partition region.osrm
+          osrm-customize region.osrm
+          rm region.osm.pbf
+          echo "$$OSRM_PBF_URL" > region.url
+        fi
+        exec osrm-routed --algorithm mld --max-table-size 1000 region.osrm
+    volumes:
+      - osrm-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5000"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+      start_period: 30m
+
+  # pg_dump to the MinIO bucket `backups` every BACKUP_INTERVAL_HOURS; see docs/deployment.md for restore.
+  backup:
+    <<: *service
+    build: ./infra/backup
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    depends_on:
+      timescaledb: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  # Simulated vehicles, for demos: docker compose ... --profile demo up -d
+  simulator:
+    <<: *service
+    profiles: [demo]
+    build: ./simulator
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      POSTGRES_HOST: timescaledb
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SIM_FAULT_RATE: ${SIM_FAULT_RATE:-0.02}
+    depends_on:
+      backend: { condition: service_healthy }
+
+  # Optional metrics: docker compose ... --profile monitoring up -d
+  # Both listen on the server's loopback only; reach them through an SSH tunnel (docs/deployment.md).
+  prometheus:
+    <<: *service
+    profiles: [monitoring]
+    image: prom/prometheus:v3.15.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    <<: *service
+    profiles: [monitoring]
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+networks:
+  internal:
+
+volumes:
+  timescale-data:
+  mosquitto-data:
+  minio-data:
+  redis-data:
+  osrm-data:
+  certs:
+  letsencrypt:
+  certbot-www:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,9 @@
+# Used by the "monitoring" profile of docker-compose.prod.yml.
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend:8081"]   # the actuator port, reachable only inside the Docker network
