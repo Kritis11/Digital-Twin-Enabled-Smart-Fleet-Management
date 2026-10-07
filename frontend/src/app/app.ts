@@ -16,6 +16,13 @@ import { FleetService } from './fleet.service';
             <span class="badge" aria-label="open alerts">{{ open }}</span>
           }
         </a>
+        <a routerLink="/planner" routerLinkActive="active">
+          Maintenance Planner
+          @if (fleet.urgentRecommendations(); as urgent) {
+            <span class="badge" aria-label="urgent recommendations">{{ urgent }}</span>
+          }
+        </a>
+        <a routerLink="/drivers-fuel" routerLinkActive="active">Drivers &amp; Fuel</a>
         <div class="live" [class.on]="fleet.live()" role="status">
           {{ fleet.live() ? 'Live' : 'Reconnecting…' }}
         </div>

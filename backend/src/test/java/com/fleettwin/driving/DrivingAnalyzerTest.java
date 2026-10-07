@@ -24,7 +24,7 @@ class DrivingAnalyzerTest {
     private final Driving cfg = new Driving(80, 3.0, 2.5, 25, 30, Duration.ofMinutes(2), Duration.ofMinutes(5), 10,
             Map.of("harsh-braking", 1.5, "rapid-acceleration", 1.0, "speeding", 1.5, "sharp-cornering", 1.0,
                     "excessive-idling", 0.5),
-            new Driving.SeverityMultipliers(1.5, 2.0), 500);
+            new Driving.SeverityMultipliers(1.5, 2.0), 500, Duration.ofDays(7));
     private final DrivingAnalyzer analyzer = new DrivingAnalyzer(cfg, new Fuel(300, 3.2, 3, 0.25, 5, 20, 5), 2);
     private final List<Event> events = new ArrayList<>();
     private final List<Trip> trips = new ArrayList<>();

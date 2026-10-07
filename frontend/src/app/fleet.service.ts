@@ -25,6 +25,95 @@ export interface VehicleTwin {
   anomaly?: boolean;
   anomalyScore?: number;
   anomalyReasons?: string[];
+  rul: Record<string, Rul>;
+  driverScore?: number;
+  fuelEfficiencyKmPerLitre?: number;
+  openRecommendations?: number;
+}
+
+export interface Rul {
+  days: number;
+  lower: number;
+  upper: number;
+  confidence: number;
+}
+
+export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type RecommendationStatus = 'OPEN' | 'SCHEDULED' | 'DONE' | 'DISMISSED';
+
+export interface Recommendation {
+  id: number;
+  vehicleId: number;
+  component: string;
+  action: string;
+  priority: Priority;
+  recommendedBy: string;
+  reason: string;
+  status: RecommendationStatus;
+  updatedAt: string;
+}
+
+export interface DrivingEvent {
+  id: number;
+  type: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  ts: string;
+  value: number;
+  detail: string;
+}
+
+export interface Trip {
+  id: number;
+  startedAt: string;
+  endedAt: string;
+  distanceKm: number;
+  durationS: number;
+  avgSpeedKmh: number;
+  maxSpeedKmh: number;
+  idleS: number;
+  fuelUsedL: number;
+  eventsCount: number;
+  driverScore: number;
+}
+
+export interface DriverScore {
+  score: number | null;
+  distanceKm: number;
+  trips: number;
+  eventCounts: Record<string, number>;
+  daily: { day: string; score: number | null; distanceKm: number; events: number }[];
+}
+
+/** Totals the fuel endpoints report for a vehicle, a day or the fleet. */
+export interface FuelFigures {
+  trips: number;
+  distanceKm: number;
+  fuelLitres: number;
+  kmPerLitre: number | null;
+  litresPer100Km: number | null;
+  idleHours: number;
+  idleLitres: number;
+  driverScore: number | null;
+}
+
+export interface FuelReport extends FuelFigures {
+  baselineKmPerLitre: number | null;
+  daily: ({ day: string } & FuelFigures)[];
+  anomalies: DrivingEvent[];
+}
+
+export interface FuelSummary {
+  vehicles: ({ vehicleId: number; registration: string; anomalies: number } & FuelFigures)[];
+  totals: { distanceKm: number; fuelLitres: number; kmPerLitre: number | null; idleLitres: number };
+  scoreEfficiencyCorrelation: number | null;
+  idlingSummary: string;
+}
+
+export type Period = '24h' | '7d' | '30d' | '90d';
+
+/** Colour band for a remaining useful life in days. */
+export function rulLevel(days: number): Level {
+  return days <= environment.rul.urgentDays ? 'critical' : days <= environment.rul.soonDays ? 'warning' : 'ok';
 }
 
 export interface Alert {
@@ -82,10 +171,17 @@ export class FleetService {
   readonly live = signal(false);
   /** Ticks every second so "last seen" labels stay current. */
   readonly now = signal(Date.now());
+  /** Every recommendation, most urgent first; refreshed on a timer and after each change. */
+  readonly recommendations = signal<Recommendation[]>([]);
+  readonly urgentRecommendations = computed(
+    () => this.recommendations().filter((r) => r.status === 'OPEN' && r.priority === 'URGENT').length,
+  );
 
   constructor() {
     setInterval(() => this.now.set(Date.now()), 1000);
     this.load();
+    this.loadRecommendations();
+    setInterval(() => this.loadRecommendations(), environment.insightsRefreshMs);
 
     let connectedBefore = false;
     const client = new Client({
@@ -146,6 +242,44 @@ export class FleetService {
 
   addMaintenance(record: MaintenanceRecord): Observable<MaintenanceRecord> {
     return this.http.post<MaintenanceRecord>(`${this.api}/api/maintenance-records`, record);
+  }
+
+  loadRecommendations(): void {
+    // Errors are left to the main load()'s banner; the list just keeps its last contents.
+    this.http.get<Recommendation[]>(`${this.api}/api/recommendations`).subscribe({
+      next: (list) => this.recommendations.set(list),
+      error: () => undefined,
+    });
+  }
+
+  setRecommendationStatus(id: number, status: RecommendationStatus): Observable<Recommendation> {
+    return this.http
+      .patch<Recommendation>(`${this.api}/api/recommendations/${id}`, { status })
+      .pipe(tap(() => this.loadRecommendations()));
+  }
+
+  recomputeRecommendations(): Observable<unknown> {
+    return this.http.post(`${this.api}/api/recommendations/recompute`, null).pipe(tap(() => this.loadRecommendations()));
+  }
+
+  driverScore(vehicleId: number, period: Period): Observable<DriverScore> {
+    return this.http.get<DriverScore>(`${this.api}/api/vehicles/${vehicleId}/driver-score`, { params: { period } });
+  }
+
+  trips(vehicleId: number, period: Period): Observable<Trip[]> {
+    return this.http.get<Trip[]>(`${this.api}/api/vehicles/${vehicleId}/trips`, { params: { period } });
+  }
+
+  events(vehicleId: number, period: Period): Observable<DrivingEvent[]> {
+    return this.http.get<DrivingEvent[]>(`${this.api}/api/vehicles/${vehicleId}/events`, { params: { period } });
+  }
+
+  fuel(vehicleId: number, period: Period): Observable<FuelReport> {
+    return this.http.get<FuelReport>(`${this.api}/api/vehicles/${vehicleId}/fuel`, { params: { period } });
+  }
+
+  fuelSummary(period: Period): Observable<FuelSummary> {
+    return this.http.get<FuelSummary>(`${this.api}/api/fleet/fuel-summary`, { params: { period } });
   }
 
   private upsertTwin(twin: VehicleTwin): void {

@@ -21,7 +21,8 @@ public record FleetProperties(Twin twin, List<Rule> rules, Ml ml, Driving drivin
 
     public record Driving(double speedLimitKmh, double harshBrakeMs2, double rapidAccelMs2, double corneringDegrees,
                           double corneringSpeedKmh, Duration idleAfter, Duration tripGap, double minScoreKm,
-                          Map<String, Double> weights, SeverityMultipliers severityMultipliers, int maxResults) {
+                          Map<String, Double> weights, SeverityMultipliers severityMultipliers, int maxResults,
+                          Duration twinPeriod) {
 
         public record SeverityMultipliers(double medium, double high) {
         }

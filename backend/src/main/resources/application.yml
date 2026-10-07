@@ -59,6 +59,8 @@ fleet:
     severity-multipliers: { medium: 1.5, high: 2.0 }   # LOW is 1.0
     flush-interval-ms: 30000      # how often trips of vehicles that went quiet are closed
     max-results: 500              # cap on events / trips returned by one request
+    twin-period: 7d               # the twin's driver score and fuel efficiency cover this long
+    twin-refresh-ms: 60000        # ... and are refreshed this often
   fuel:
     tank-litres: 300              # fuel_level is a percentage of this
     idle-litres-per-hour: 3.2     # used to turn idling time into litres

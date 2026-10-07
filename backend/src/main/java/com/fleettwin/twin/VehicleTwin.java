@@ -56,6 +56,10 @@ public class VehicleTwin {
     /** brakes, battery, tyres, engine; a part is absent until the ML service has predicted it. */
     private Map<String, Rul> rul = new LinkedHashMap<>();
 
+    /** Driver score (0-100) and km per litre over fleet.driving.twin-period; null if the vehicle has not driven in it. */
+    private Double driverScore;
+    private Double fuelEfficiencyKmPerLitre;
+
     /** Recommendations with status OPEN, as of the last recommendation run or status change. */
     private Long openRecommendations;
 

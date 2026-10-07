@@ -103,6 +103,16 @@ public class TwinService {
         save(twin);
     }
 
+    public synchronized void applyDriving(long vehicleId, Double driverScore, Double kmPerLitre) {
+        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        if (!java.util.Objects.equals(twin.getDriverScore(), driverScore)
+                || !java.util.Objects.equals(twin.getFuelEfficiencyKmPerLitre(), kmPerLitre)) {
+            twin.setDriverScore(driverScore);
+            twin.setFuelEfficiencyKmPerLitre(kmPerLitre);
+            save(twin);
+        }
+    }
+
     public synchronized void refreshOpenRecommendations(long vehicleId, long open) {
         VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
         if (twin.getOpenRecommendations() == null || twin.getOpenRecommendations() != open) {

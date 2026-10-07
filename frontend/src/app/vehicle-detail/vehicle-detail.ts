@@ -7,6 +7,7 @@ import type { EChartsOption } from 'echarts';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import { EMPTY, catchError, combineLatest, forkJoin, switchMap, timer } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { VehicleInsights } from './vehicle-insights';
 import { Alert, FleetService, MaintenanceRecord, TelemetryPoint, ago, healthLevel } from '../fleet.service';
 
 const RANGES = { '15 min': 15, '1 h': 60, '24 h': 24 * 60 } as const;
@@ -39,7 +40,7 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
 
 @Component({
   selector: 'app-vehicle-detail',
-  imports: [RouterLink, FormsModule, DatePipe, DecimalPipe, NgxEchartsDirective],
+  imports: [RouterLink, FormsModule, DatePipe, DecimalPipe, NgxEchartsDirective, VehicleInsights],
   template: `
     <p><a routerLink="/">← Fleet Overview</a></p>
 
@@ -51,6 +52,11 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
           <p>
             <span class="pill" [class]="t.state.toLowerCase()">{{ t.state }}</span>
             <span class="muted"> last seen {{ ago(t.lastSeen, fleet.now()) }}</span>
+          </p>
+          <p class="muted">
+            Driver score {{ t.driverScore == null ? '–' : (t.driverScore | number: '1.0-0') }} ·
+            {{ t.fuelEfficiencyKmPerLitre == null ? '–' : (t.fuelEfficiencyKmPerLitre | number: '1.2-2') }} km/l ·
+            {{ t.openRecommendations ?? 0 }} open recommendations
           </p>
           @if (t.anomaly) {
             <p class="anomaly" role="status">
@@ -81,6 +87,8 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
           </div>
         }
       </section>
+
+      <app-vehicle-insights [twin]="t" />
 
       <section class="panel">
         <div class="panel-head">

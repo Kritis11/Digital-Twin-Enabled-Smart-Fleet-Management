@@ -18,6 +18,7 @@ import com.fleettwin.driving.DrivingAnalyzer.Reading;
 import com.fleettwin.driving.DrivingAnalyzer.Trip;
 import com.fleettwin.telemetry.Telemetry;
 import com.fleettwin.twin.Status;
+import com.fleettwin.twin.TwinService;
 import com.fleettwin.vehicle.Vehicle;
 import com.fleettwin.vehicle.VehicleRepository;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class DrivingService {
     private final DrivingRepository repository;
     private final VehicleRepository vehicles;
     private final AlertService alerts;
+    private final TwinService twins;
     private final Map<Long, DrivingAnalyzer> analyzers = new HashMap<>();
 
     /** Called for every stored telemetry row. */
@@ -60,6 +62,21 @@ public class DrivingService {
                 store(vehicleId, analyzer.flush(), true);
             }
         });
+    }
+
+    /** Puts each vehicle's recent driver score and fuel efficiency on its twin. Plain SQL: no ML service involved. */
+    @Scheduled(fixedDelayString = "${fleet.driving.twin-refresh-ms}")
+    public void refreshTwins() {
+        Instant since = Instant.now().minus(props.driving().twinPeriod());
+        for (Vehicle vehicle : vehicles.findAll()) {
+            Map<String, Object> totals = repository.totals(vehicle.getId(), since);
+            double km = ((Number) totals.get("distanceKm")).doubleValue();
+            double litres = ((Number) totals.get("fuelLitres")).doubleValue();
+            double penalty = ((Number) totals.get("penaltyPoints")).doubleValue();
+            twins.applyDriving(vehicle.getId(),
+                    km > 0 ? Math.round(DrivingAnalyzer.score(penalty, km, props.driving().minScoreKm()) * 10) / 10.0 : null,
+                    litres > 0 ? Math.round(km / litres * 100) / 100.0 : null);
+        }
     }
 
     /** Deletes the events and trips in the range and rebuilds them from telemetry. */

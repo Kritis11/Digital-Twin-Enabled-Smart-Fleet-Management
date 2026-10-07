@@ -3,7 +3,7 @@ import { DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import * as L from 'leaflet';
 import { environment } from '../../environments/environment';
-import { FleetService, VehicleTwin, ago, healthLevel } from '../fleet.service';
+import { FleetService, VehicleTwin, ago, healthLevel, rulLevel } from '../fleet.service';
 
 @Component({
   selector: 'app-fleet-overview',
@@ -19,6 +19,16 @@ import { FleetService, VehicleTwin, ago, healthLevel } from '../fleet.service';
       <a class="card" routerLink="/alerts" [class.critical]="fleet.openAlerts().length">
         <span>Open alerts</span><strong>{{ fleet.openAlerts().length }}</strong>
       </a>
+      <a class="card" routerLink="/planner" [class.critical]="fleet.urgentRecommendations()">
+        <span>Urgent recommendations</span><strong>{{ fleet.urgentRecommendations() }}</strong>
+      </a>
+      @if (lowestRul(); as low) {
+        <a class="card" [routerLink]="['/vehicles', low.vehicleId]" [class.critical]="low.level === 'critical'">
+          <span>Lowest remaining life</span>
+          <strong>{{ low.days | number: '1.0-0' }} d</strong>
+          <span>{{ low.registration }} · {{ low.component }}</span>
+        </a>
+      }
     </section>
 
     <div class="panel map" #map aria-label="Fleet map"></div>
@@ -33,7 +43,7 @@ import { FleetService, VehicleTwin, ago, healthLevel } from '../fleet.service';
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>Vehicle</th><th>State</th><th>Health</th><th>Last seen</th></tr>
+              <tr><th>Vehicle</th><th>State</th><th>Health</th><th>Driver score</th><th>Efficiency</th><th>Last seen</th></tr>
             </thead>
             <tbody>
               @for (twin of fleet.twins(); track twin.id) {
@@ -47,6 +57,8 @@ import { FleetService, VehicleTwin, ago, healthLevel } from '../fleet.service';
                     <span class="dot" [class]="level(twin)"></span>
                     {{ twin.healthScore == null ? '–' : (twin.healthScore | number: '1.0-0') }}
                   </td>
+                  <td>{{ twin.driverScore == null ? '–' : (twin.driverScore | number: '1.0-0') }}</td>
+                  <td>{{ twin.fuelEfficiencyKmPerLitre == null ? '–' : (twin.fuelEfficiencyKmPerLitre | number: '1.2-2') + ' km/l' }}</td>
                   <td>{{ ago(twin.lastSeen, fleet.now()) }}</td>
                 </tr>
               }
@@ -65,6 +77,16 @@ export class FleetOverview {
     const counts = { MOVING: 0, IDLE: 0, OFFLINE: 0 };
     for (const twin of this.fleet.twins()) counts[twin.state]++;
     return counts;
+  });
+
+  /** The part closest to predicted failure anywhere in the fleet. */
+  protected readonly lowestRul = computed(() => {
+    const all = this.fleet.twins().flatMap((t) =>
+      Object.entries(t.rul ?? {}).map(([component, r]) => ({
+        vehicleId: t.id, registration: t.registration, component, days: r.days, level: rulLevel(r.days),
+      })),
+    );
+    return all.length ? all.reduce((a, b) => (b.days < a.days ? b : a)) : null;
   });
 
   private readonly router = inject(Router);

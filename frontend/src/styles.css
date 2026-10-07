@@ -120,3 +120,30 @@ tr.acknowledged { opacity: 0.55; }
 .panel.filters { margin-bottom: 1rem; }
 .filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--muted); }
 .filters .grow { flex: 1; min-width: 160px; }
+
+/* Phase 2 */
+h3 { font-size: 0.95rem; margin: 1rem 0 0.5rem; }
+.pill.urgent { background: var(--critical); }
+.pill.high { background: #d9601a; }
+.pill.medium { background: var(--warning); }
+.pill.low { background: var(--offline); }
+.card > span:last-child:not(:first-child) { font-size: 0.8rem; }
+.actions { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: flex-start; }
+.scroll.tall { max-height: 320px; overflow-y: auto; }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 0.3rem 0; }
+
+.rul-row { display: grid; grid-template-columns: 90px 1fr 210px; gap: 0.75rem; align-items: center; margin-bottom: 0.5rem; }
+.rul-track { position: relative; height: 16px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.rul-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }
+.rul-bar.ok, .score-bar .ok { background: var(--ok); }
+.rul-bar.warning, .score-bar .warning { background: var(--warning); }
+.rul-bar.critical, .score-bar .critical { background: var(--critical); }
+.rul-range { position: absolute; top: 5px; height: 6px; background: rgb(0 0 0 / 55%); border-radius: 3px; min-width: 2px; }
+@media (max-width: 720px) { .rul-row { grid-template-columns: 1fr; gap: 0.2rem; } }
+
+.recommendation { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+.recommendation:last-child { border-bottom: 0; }
+.recommendation p { margin: 0.3rem 0 0; }
+.score-bar { display: inline-block; width: 90px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-right: 0.4rem; vertical-align: middle; }
+.score-bar div { height: 100%; }
