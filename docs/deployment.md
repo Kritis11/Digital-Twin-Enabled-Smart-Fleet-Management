@@ -51,6 +51,7 @@ Edit `.env.prod`:
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | The first dashboard login (password: 10+ characters) |
 | `POSTGRES_PASSWORD`, `MQTT_PASSWORD`, `MINIO_ROOT_PASSWORD`, `REDIS_PASSWORD` | A different random value each: `openssl rand -base64 36` |
 | `OSRM_PBF_URL` | An OpenStreetMap extract covering where the fleet drives |
+| `LOGIN_RATE_PER_MINUTE` | Login attempts allowed per client address before nginx answers 429. Default 10 |
 | `BACKUP_INTERVAL_HOURS`, `BACKUP_RETENTION_DAYS` | Defaults: a dump every 24 hours, kept 14 days |
 
 `.env.prod` is git-ignored and must never be committed. Keep a copy somewhere safe: without
@@ -250,7 +251,10 @@ For a check from outside, point any uptime monitor at `https://DOMAIN/healthz` (
 
 ## 12. Security notes
 
-- Logins are rate-limited by nginx to 10 a minute per client address (HTTP 429 beyond that).
+- Logins are rate-limited by nginx to 10 a minute per client address (HTTP 429 beyond that);
+  `LOGIN_RATE_PER_MINUTE` changes it.
+- The backend refuses to start while `JWT_SECRET` or `ADMIN_PASSWORD` still has its `change-me`
+  example value. The full review is in [security.md](security.md).
 - The ML service and OSRM have no authentication and rely on not being reachable from outside.
   Do not publish their ports.
 - All devices share one MQTT username and password. Anyone holding them can publish telemetry for

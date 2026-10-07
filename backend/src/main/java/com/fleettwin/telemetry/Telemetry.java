@@ -15,6 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import org.springframework.data.domain.Persistable;
 
 @Entity
 @Table(name = "telemetry")
@@ -22,7 +23,7 @@ import org.hibernate.type.SqlTypes;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Telemetry {
+public class Telemetry implements Persistable<TelemetryId> {
 
     @Id
     private Long vehicleId;
@@ -79,5 +80,20 @@ public class Telemetry {
         m.put("accelMax", accelMax);
         m.values().removeIf(v -> v == null);
         return m;
+    }
+
+    @Override
+    public TelemetryId getId() {
+        return new TelemetryId(vehicleId, ts);
+    }
+
+    /**
+     * Readings are only ever inserted. Saying so spares the SELECT that save() would otherwise run first to
+     * decide between INSERT and UPDATE. A reading delivered twice (MQTT QoS 1) fails on the primary key and
+     * is dropped by the ingest service, which is right: it is the same reading.
+     */
+    @Override
+    public boolean isNew() {
+        return true;
     }
 }

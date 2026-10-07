@@ -43,7 +43,8 @@ production: browser ──HTTPS──▶ nginx (static dashboard, /api, /ws) ─
 - **Vehicle id comes from the MQTT topic**, not the JSON body. A device can't write another
   vehicle's telemetry by lying in the payload once per-vehicle broker ACLs are added.
 - **`telemetry` primary key is `(vehicle_id, ts)`**. TimescaleDB requires the partition column
-  (`ts`) in every unique key. A re-delivered message (QoS 1) overwrites the same row.
+  (`ts`) in every unique key. Readings are only ever inserted, never looked up first; a message
+  delivered twice (QoS 1) fails on the key and is dropped as the duplicate it is.
 - **`telemetry.vehicle_id` has a foreign key to `vehicles`**, so telemetry for unknown vehicles is
   rejected and logged rather than stored.
 - **`injected_fault` column** holds the simulator's ground-truth fault label for ML training. It
@@ -64,7 +65,14 @@ production: browser ──HTTPS──▶ nginx (static dashboard, /api, /ws) ─
 - **Chart markers are alerts**, not individual anomalous readings. No per-reading anomaly scores
   are stored.
 - **ML calls run on the scheduler thread**, never on the MQTT thread, with short timeouts. The ML
-  service being slow or down cannot delay ingestion.
+  service being slow or down cannot delay ingestion. Vehicles are scored one after another:
+  the ML service is one CPU-bound Python process, and calling it in parallel was measured to
+  lower throughput, not raise it ([performance.md](performance.md)).
+- **Readings are handled one at a time, in arrival order**, on the MQTT subscriber thread. That
+  keeps each vehicle's readings in order for the twin and the trip detector without any locking
+  scheme, and it is the system's throughput limit ([performance.md](performance.md)).
+- **The browser applies live twin updates in batches** a few times a second rather than one redraw
+  per message.
 - **Training and inference share `app/features.py`**, and the backend sends a 2-minute window, so
   the features the model sees in production are computed exactly as in training.
 - **Model versions are UTC timestamps** under `models/anomaly/` in MinIO; the newest wins. Nothing

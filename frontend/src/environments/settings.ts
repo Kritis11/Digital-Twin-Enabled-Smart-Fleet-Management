@@ -1,6 +1,8 @@
 // Dashboard settings shared by the development and production builds.
 export const settings = {
   wsReconnectMs: 3000,
+  // Live twin updates are applied in batches this far apart, so a large fleet does not redraw per message.
+  twinFlushMs: 250,
   // How often the Vehicle Detail charts re-fetch their time range.
   chartRefreshMs: 10000,
   // How often driver, trip, fuel and recommendation data is re-fetched.

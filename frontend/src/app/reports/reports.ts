@@ -120,7 +120,7 @@ export class Reports {
         },
         error: (e) => {
           this.busy.set(false);
-          this.error.set(e.error?.message ?? 'The report could not be generated.');
+          this.error.set(e.error?.detail ?? 'The report could not be generated.');
         },
       });
   }

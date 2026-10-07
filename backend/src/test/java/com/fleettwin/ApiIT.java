@@ -168,9 +168,9 @@ class ApiIT {
 
     private record Reply(int status, JsonNode body, MockHttpServletResponse raw) {
 
-        /** The reason given with an error status (what a real client reads as "message" in the error body). */
+        /** The reason given with an error status: "detail" in the problem JSON. */
         String message() {
-            return raw.getErrorMessage();
+            return body.get("detail").asText();
         }
     }
 
@@ -569,6 +569,40 @@ class ApiIT {
         assertThat(stompConnect("not.a.token")).startsWith("ERROR").contains("Invalid or expired token");
         assertThat(stompConnect(login("vik", PASSWORD).get("refreshToken").asText())).as("a refresh token is not enough").startsWith("ERROR");
         assertThat(stompConnect(token("vik"))).startsWith("CONNECTED");
+    }
+
+    @Test
+    @Order(15)   // last: Redis does not come back
+    void telemetryIsStillStoredWhileRedisIsDown() throws Exception {
+        String tina = token("tina");
+        int before = jdbc.queryForObject("SELECT count(*) FROM telemetry WHERE vehicle_id = 3", Integer.class);
+        REDIS.stop();
+
+        Instant now = Instant.now();
+        try (MqttClient client = new MqttClient(mqttUrl(), "integration-test-vehicle-3", new MemoryPersistence())) {
+            client.connect();
+            for (int i = 0; i < 20; i++) {
+                String reading = "{\"ts\":\"%s\",\"lat\":18.52,\"lng\":73.85,\"speed\":30,\"engine_temp\":90}".formatted(now.plusMillis(i));
+                client.publish("fleet/3/telemetry", new MqttMessage(reading.getBytes()));
+            }
+            client.disconnect();
+        }
+        // twenty readings in a few seconds: the twin updates fail fast instead of each waiting for Redis
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertThat(jdbc.queryForObject("SELECT count(*) FROM telemetry WHERE vehicle_id = 3", Integer.class)).isEqualTo(before + 20));
+
+        // what needs the twins says so quickly; what does not need them carries on
+        // (over real HTTP: MockMvc would rethrow the exception instead of answering 500)
+        long started = System.currentTimeMillis();
+        HttpResponse<String> vehicles = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/vehicles")).header("Authorization", "Bearer " + tina).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(vehicles.statusCode()).isEqualTo(500);
+        assertThat(vehicles.body()).as("no internals in the error").doesNotContain("Redis").doesNotContain("Exception");
+        assertThat(System.currentTimeMillis() - started).isLessThan(3000);
+        assertThat(get(tina, "/api/alerts").status()).isEqualTo(200);
+        assertThat(get(tina, "/api/vehicles/3/telemetry").status()).isEqualTo(200);
+        assertThat(get(tina, "/api/maintenance-records").status()).isEqualTo(200);
     }
 
     /** Opens /ws, sends one STOMP CONNECT frame and returns the server's first frame. */

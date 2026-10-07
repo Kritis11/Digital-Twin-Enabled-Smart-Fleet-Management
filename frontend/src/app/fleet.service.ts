@@ -198,6 +198,8 @@ export class FleetService {
   private readonly http = inject(HttpClient);
   private readonly api = environment.apiBaseUrl;
   private readonly auth = inject(AuthService);
+  private pendingTwins = new Map<number, VehicleTwin>();
+  private twinFlush?: ReturnType<typeof setTimeout>;
   /** False for viewers: pages hide their buttons and forms. */
   readonly canWrite = this.auth.canWrite;
 
@@ -233,7 +235,7 @@ export class FleetService {
         if (connectedBefore) this.load();
         connectedBefore = true;
         this.live.set(true);
-        client.subscribe('/topic/twins', (m) => this.upsertTwin(JSON.parse(m.body)));
+        client.subscribe('/topic/twins', (m) => this.queueTwin(JSON.parse(m.body)));
         client.subscribe('/topic/alerts', (m) => this.upsertAlert(JSON.parse(m.body)));
       },
       onWebSocketClose: () => this.live.set(false),
@@ -349,12 +351,27 @@ export class FleetService {
     return this.http.get<Utilisation>(`${this.api}/api/fleet/utilisation`, { params: { period } });
   }
 
-  private upsertTwin(twin: VehicleTwin): void {
-    this.twins.update((list) =>
-      list.some((t) => t.id === twin.id)
-        ? list.map((t) => (t.id === twin.id ? twin : t))
-        : [...list, twin].sort((a, b) => a.id - b.id),
-    );
+  /**
+   * Twin updates arrive one per reading, hundreds a second for a large fleet. They are collected and
+   * applied together a few times a second, so the pages redraw once per batch, not once per message.
+   */
+  private queueTwin(twin: VehicleTwin): void {
+    this.pendingTwins.set(twin.id, twin);
+    this.twinFlush ??= setTimeout(() => {
+      const pending = this.pendingTwins;
+      this.pendingTwins = new Map();
+      this.twinFlush = undefined;
+      if (!this.auth.loggedIn()) return;
+      this.twins.update((list) => {
+        const merged = list.map((t) => {
+          const newer = pending.get(t.id);
+          pending.delete(t.id);
+          return newer ?? t;
+        });
+        // what is left belongs to vehicles not in the list yet
+        return pending.size ? [...merged, ...pending.values()].sort((a, b) => a.id - b.id) : merged;
+      });
+    }, environment.twinFlushMs);
   }
 
   private upsertAlert(alert: Alert): void {

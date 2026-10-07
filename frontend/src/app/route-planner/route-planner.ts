@@ -219,7 +219,7 @@ export class RoutePlanner {
         },
         error: (e) => {
           this.busy.set(false);
-          this.error.set(e.error?.detail ?? e.error?.message ?? 'Route optimisation failed. Is the ML service running?');
+          this.error.set(e.error?.detail ?? 'Route optimisation failed. Is the ML service running?');
         },
       });
   }

@@ -2,10 +2,12 @@ package com.fleettwin.twin;
 
 import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,9 +45,17 @@ public class TwinService {
     private final AlertService alerts;
     private final SimpMessagingTemplate messaging;
     private final FleetProperties props;
+    private final Map<Long, Vehicle> identities = new ConcurrentHashMap<>();
 
     public List<VehicleTwin> all() {
-        return vehicles.findAll(Sort.by("id")).stream().map(this::load).toList();
+        List<Vehicle> fleet = vehicles.findAll(Sort.by("id"));
+        // one MGET instead of a GET per vehicle
+        List<String> stored = redis.opsForValue().multiGet(fleet.stream().map(v -> key(v.getId())).toList());
+        List<VehicleTwin> twins = new ArrayList<>(fleet.size());
+        for (int i = 0; i < fleet.size(); i++) {
+            twins.add(toTwin(fleet.get(i), stored.get(i)));
+        }
+        return twins;
     }
 
     /** The twin plus its maintenance summary. */
@@ -61,7 +71,7 @@ public class TwinService {
 
     /** Called for every stored telemetry row. */
     public synchronized void onTelemetry(Telemetry t) {
-        VehicleTwin twin = load(vehicles.findById(t.getVehicleId()).orElseThrow());
+        VehicleTwin twin = load(t.getVehicleId());
         if (twin.getLastSeen() != null && t.getTs().isBefore(twin.getLastSeen())) {
             return; // late or re-delivered message; the twin already reflects something newer
         }
@@ -94,7 +104,7 @@ public class TwinService {
 
     /** Stores the ML service's latest verdict. The anomaly fields are null when no model is loaded. */
     public synchronized void applyMl(long vehicleId, double healthScore, Boolean anomaly, Double score, List<String> reasons) {
-        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        VehicleTwin twin = load(vehicleId);
         twin.setHealthScore(healthScore);
         twin.setAnomaly(anomaly);
         twin.setAnomalyScore(score);
@@ -104,7 +114,7 @@ public class TwinService {
     }
 
     public synchronized void applyDriving(long vehicleId, Double driverScore, Double kmPerLitre) {
-        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        VehicleTwin twin = load(vehicleId);
         if (!java.util.Objects.equals(twin.getDriverScore(), driverScore)
                 || !java.util.Objects.equals(twin.getFuelEfficiencyKmPerLitre(), kmPerLitre)) {
             twin.setDriverScore(driverScore);
@@ -114,7 +124,7 @@ public class TwinService {
     }
 
     public synchronized void refreshOpenRecommendations(long vehicleId, long open) {
-        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        VehicleTwin twin = load(vehicleId);
         if (twin.getOpenRecommendations() == null || twin.getOpenRecommendations() != open) {
             twin.setOpenRecommendations(open);
             save(twin);
@@ -122,7 +132,7 @@ public class TwinService {
     }
 
     public synchronized void applyRul(long vehicleId, Map<String, VehicleTwin.Rul> rul) {
-        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        VehicleTwin twin = load(vehicleId);
         twin.getRul().putAll(rul);
         save(twin);
     }
@@ -132,7 +142,7 @@ public class TwinService {
      * waiting for the vehicle's next message to confirm it.
      */
     public synchronized void resetWear(long vehicleId, String component, String sensor, Double newValue) {
-        VehicleTwin twin = load(vehicles.findById(vehicleId).orElseThrow());
+        VehicleTwin twin = load(vehicleId);
         if (sensor != null && newValue != null) {
             twin.getSensors().put(sensor, newValue);
         }
@@ -165,8 +175,20 @@ public class TwinService {
         return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
     }
 
+    /**
+     * The twin of a known vehicle. Called for every telemetry reading, so the vehicle's identity comes
+     * from memory rather than the database; it changes only with a migration, i.e. with a restart.
+     */
+    private VehicleTwin load(long vehicleId) {
+        Vehicle vehicle = identities.computeIfAbsent(vehicleId, id -> vehicles.findById(id).orElseThrow());
+        return load(vehicle);
+    }
+
     private VehicleTwin load(Vehicle vehicle) {
-        String json = redis.opsForValue().get(key(vehicle.getId()));
+        return toTwin(vehicle, redis.opsForValue().get(key(vehicle.getId())));
+    }
+
+    private VehicleTwin toTwin(Vehicle vehicle, String json) {
         VehicleTwin twin;
         try {
             twin = json == null ? new VehicleTwin() : mapper.readValue(json, VehicleTwin.class);

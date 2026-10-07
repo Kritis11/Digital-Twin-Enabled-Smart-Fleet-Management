@@ -158,8 +158,8 @@ export class Users {
     this.http.get<AuditEntry[]>(`${this.api}/audit-log`).subscribe((list) => this.audit.set(list));
   }
 
-  private fail(e: { error?: { detail?: string; message?: string } }): void {
-    this.error.set(e.error?.detail ?? e.error?.message ?? 'That change did not go through.');
+  private fail(e: { error?: { detail?: string } }): void {
+    this.error.set(e.error?.detail ?? 'That change did not go through.');
     this.load(); // puts a select the user changed back to the stored value
   }
 }

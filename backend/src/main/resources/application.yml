@@ -1,6 +1,11 @@
 spring:
   application:
     name: fleet-twin-backend
+  mvc:
+    # Errors are RFC 9457 problem JSON: {"status", "title", "detail"}. "detail" carries the reasons we
+    # write for the user ("That username is taken"); unexpected exceptions never leak their message.
+    problemdetails:
+      enabled: true
   config:
     # Credentials come from the repo-root .env (run from backend/) or real env vars.
     import: optional:file:../.env[.properties]
@@ -28,11 +33,13 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD}
+      # A twin read or write that takes longer than this has failed (normally well under 1 ms).
+      # Kept short because it is waited for on the telemetry thread; see RedisConfig.
+      timeout: ${REDIS_TIMEOUT:500ms}
+      connect-timeout: 2s
 
 server:
   port: ${SERVER_PORT:8080}
-  error:
-    include-message: always       # the reasons we give ("That username is taken") are meant for the user
 
 fleet:
   mqtt:
@@ -189,4 +196,4 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized   # anonymous callers get the status only
