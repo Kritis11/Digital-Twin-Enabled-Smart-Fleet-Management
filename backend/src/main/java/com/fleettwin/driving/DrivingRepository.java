@@ -140,6 +140,32 @@ public class DrivingRepository {
                 vehicleId, Timestamp.from(since));
     }
 
+    /** One row per vehicle per UTC day that it drove: where the day started and ended and what happened between. */
+    public List<Map<String, Object>> routes(long vehicleId, Instant since) {
+        return jdbc.queryForList("""
+                SELECT date_trunc('day', started_at AT TIME ZONE 'UTC')::date::text AS "day",
+                       min(started_at) AS "startedAt", max(ended_at) AS "endedAt",
+                       (array_agg(start_lat ORDER BY started_at))[1] AS "startLat",
+                       (array_agg(start_lng ORDER BY started_at))[1] AS "startLng",
+                       (array_agg(end_lat ORDER BY started_at DESC))[1] AS "endLat",
+                       (array_agg(end_lng ORDER BY started_at DESC))[1] AS "endLng",
+                       count(*) AS "trips", count(*) - 1 AS "stops",
+                       round(sum(distance_km)::numeric, 1) AS "distanceKm", sum(duration_s) AS "drivingSeconds",
+                       sum(events_count) AS "events", round(sum(fuel_used_l)::numeric, 1) AS "fuelLitres"
+                FROM trips WHERE vehicle_id = ? AND started_at >= ? GROUP BY 1 ORDER BY 1 DESC""",
+                vehicleId, Timestamp.from(since));
+    }
+
+    /** vehicleId, registration, trips, activeSeconds, idleSeconds, distanceKm for every vehicle, driven or not. */
+    public List<Map<String, Object>> utilisation(Instant since) {
+        return jdbc.queryForList("""
+                SELECT v.id AS "vehicleId", v.registration AS "registration", count(t.id) AS "trips",
+                       coalesce(sum(t.duration_s), 0) AS "activeSeconds", coalesce(sum(t.idle_s), 0) AS "idleSeconds",
+                       coalesce(sum(t.distance_km), 0) AS "distanceKm"
+                FROM vehicles v LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at >= ?
+                GROUP BY v.id ORDER BY v.id""", Timestamp.from(since));
+    }
+
     public Map<String, Long> eventCounts(long vehicleId, Instant since) {
         Map<String, Long> counts = new java.util.LinkedHashMap<>();
         jdbc.query("SELECT type, count(*) FROM driving_events WHERE vehicle_id = ? AND ts >= ? GROUP BY type ORDER BY type",

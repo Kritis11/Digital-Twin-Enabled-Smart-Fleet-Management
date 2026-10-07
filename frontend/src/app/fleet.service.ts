@@ -109,6 +109,42 @@ export interface FuelSummary {
   idlingSummary: string;
 }
 
+export interface OptimiseRequest {
+  vehicleIds: number[];
+  depot: { lat: number; lng: number } | null;
+  returnToStart: boolean;
+  stops: { name: string; lat: number; lng: number; windowStart?: string; windowEnd?: string }[];
+}
+
+export interface OptimiseResult {
+  departAt: string;
+  routes: {
+    vehicleId: number;
+    registration: string;
+    /** stop is the index into the request's stops. */
+    stops: { stop: number; name?: string; lat: number; lng: number; arrival: string }[];
+    distanceKm: number;
+    durationMinutes: number;
+    fuelLitres: number;
+    geometry: [number, number][];
+  }[];
+  excluded: { vehicleId: number; registration: string; reasons: string[] }[];
+  unassigned: number[];
+  totalDistanceKm: number;
+  totalFuelLitres: number;
+  distanceSource?: 'osrm' | 'straight-line';
+  note?: string;
+}
+
+export interface Utilisation {
+  availableHoursPerVehicle: number;
+  vehicles: {
+    vehicleId: number; registration: string; trips: number; activeHours: number; idleHours: number;
+    idleShare: number | null; distanceKm: number; utilisation: number; usage: 'UNDER_USED' | 'NORMAL' | 'OVER_USED';
+  }[];
+  fleet: { activeHours: number; idleHours: number; distanceKm: number; utilisation: number | null; underUsed: string[]; overUsed: string[] };
+}
+
 export type Period = '24h' | '7d' | '30d' | '90d';
 
 /** Colour band for a remaining useful life in days. */
@@ -280,6 +316,14 @@ export class FleetService {
 
   fuelSummary(period: Period): Observable<FuelSummary> {
     return this.http.get<FuelSummary>(`${this.api}/api/fleet/fuel-summary`, { params: { period } });
+  }
+
+  optimiseRoutes(request: OptimiseRequest): Observable<OptimiseResult> {
+    return this.http.post<OptimiseResult>(`${this.api}/api/routes/optimise`, request);
+  }
+
+  utilisation(period: Period): Observable<Utilisation> {
+    return this.http.get<Utilisation>(`${this.api}/api/fleet/utilisation`, { params: { period } });
   }
 
   private upsertTwin(twin: VehicleTwin): void {

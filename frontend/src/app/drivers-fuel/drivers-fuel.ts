@@ -1,18 +1,18 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, PercentPipe } from '@angular/common';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import type { EChartsOption } from 'echarts';
 import { NgxEchartsDirective } from 'ngx-echarts';
-import { EMPTY, catchError, switchMap, timer } from 'rxjs';
+import { EMPTY, catchError, forkJoin, switchMap, timer } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { FleetService, FuelSummary, Period } from '../fleet.service';
+import { FleetService, FuelSummary, Period, Utilisation } from '../fleet.service';
 
 const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
 
 @Component({
   selector: 'app-drivers-fuel',
-  imports: [RouterLink, DecimalPipe, NgxEchartsDirective],
+  imports: [RouterLink, DecimalPipe, PercentPipe, NgxEchartsDirective],
   template: `
     <div class="panel-head">
       <h1>Drivers &amp; Fuel</h1>
@@ -85,6 +85,48 @@ const PERIODS: Period[] = ['24h', '7d', '30d', '90d'];
           <div echarts [options]="idlingChart()" class="chart" aria-label="Idling litres by vehicle"></div>
         </div>
       </section>
+
+      @if (utilisation(); as u) {
+        <section class="panel">
+          <h2>Utilisation</h2>
+          <p>
+            The fleet was on trips for {{ u.fleet.activeHours | number: '1.0-0' }} h
+            ({{ u.fleet.utilisation | percent }} of {{ u.availableHoursPerVehicle | number: '1.0-0' }} working hours per vehicle),
+            {{ u.fleet.idleHours | number: '1.0-0' }} h of it standing with the engine on.
+            @if (u.fleet.underUsed.length) { Under-used: {{ u.fleet.underUsed.join(', ') }}. }
+            @if (u.fleet.overUsed.length) { Over-used: {{ u.fleet.overUsed.join(', ') }}. }
+          </p>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr><th>Vehicle</th><th>Utilisation</th><th>Active</th><th>Idle</th><th>Distance</th><th>Trips</th><th>Usage</th></tr>
+              </thead>
+              <tbody>
+                @for (v of u.vehicles; track v.vehicleId) {
+                  <tr>
+                    <td><a [routerLink]="['/vehicles', v.vehicleId]">{{ v.registration }}</a></td>
+                    <td>
+                      <div class="score-bar"><div [style.width.%]="v.utilisation * 100" [class]="v.usage === 'NORMAL' ? 'ok' : 'warning'"></div></div>
+                      {{ v.utilisation | percent }}
+                    </td>
+                    <td>{{ v.activeHours | number: '1.1-1' }} h</td>
+                    <td>{{ v.idleHours | number: '1.1-1' }} h{{ v.idleShare == null ? '' : ' (' + (v.idleShare | percent) + ')' }}</td>
+                    <td>{{ v.distanceKm | number: '1.0-0' }} km</td>
+                    <td>{{ v.trips }}</td>
+                    <td>
+                      @if (v.usage !== 'NORMAL') {
+                        <span class="pill warning">{{ v.usage === 'UNDER_USED' ? 'Under-used' : 'Over-used' }}</span>
+                      } @else {
+                        Normal
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
     }
   `,
 })
@@ -93,6 +135,7 @@ export class DriversFuel {
   protected readonly periods = PERIODS;
   protected readonly period = signal<Period>('7d');
   protected readonly summary = signal<FuelSummary | undefined>(undefined);
+  protected readonly utilisation = signal<Utilisation | undefined>(undefined);
   protected readonly error = signal(false);
 
   /** Best driver first; vehicles that did not drive go last. */
@@ -113,7 +156,7 @@ export class DriversFuel {
           this.summary.set(undefined);
           return timer(0, environment.insightsRefreshMs).pipe(
             switchMap(() =>
-              this.fleet.fuelSummary(period).pipe(
+              forkJoin([this.fleet.fuelSummary(period), this.fleet.utilisation(period)]).pipe(
                 catchError(() => {
                   this.error.set(true);
                   return EMPTY;
@@ -124,9 +167,10 @@ export class DriversFuel {
         }),
         takeUntilDestroyed(),
       )
-      .subscribe((summary) => {
+      .subscribe(([summary, utilisation]) => {
         this.error.set(false);
         this.summary.set(summary);
+        this.utilisation.set(utilisation);
       });
   }
 

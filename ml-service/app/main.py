@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import model as model_store
+from . import routing
 from . import rul as rul_lib
 from .model import AnomalyModel
 from .rul import RulModel
@@ -70,7 +71,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Fleet Twin ML Service", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Fleet Twin ML Service", version="0.3.0", lifespan=lifespan)
 
 
 class Reading(BaseModel):
@@ -131,6 +132,58 @@ class RulResponse(BaseModel):
     upper_bound: float = Field(ge=0)
     confidence: float = Field(ge=0, le=1)
     model_version: str
+
+
+class RoutePoint(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class RouteVehicle(RoutePoint):
+    """A vehicle and where it starts. Each km costs cost_factor, so higher values are used less."""
+
+    id: int
+    cost_factor: float = Field(default=1.0, gt=0)
+
+
+class RouteStop(RoutePoint):
+    id: int
+    service_s: int = Field(default=0, ge=0)
+    # Optional arrival window, in seconds after departure.
+    window_start_s: int | None = Field(default=None, ge=0)
+    window_end_s: int | None = Field(default=None, ge=0)
+
+
+class OptimiseRequest(BaseModel):
+    vehicles: list[RouteVehicle] = Field(min_length=1, max_length=50)
+    stops: list[RouteStop] = Field(min_length=1, max_length=200)
+    return_to_start: bool = True
+    # Weight on the longest route's duration; 0 minimises distance alone.
+    balance: int = Field(default=0, ge=0)
+    max_stops_per_vehicle: int | None = Field(default=None, ge=1)
+    time_limit_s: float = Field(default=3, gt=0, le=60)
+
+
+class RouteVisit(BaseModel):
+    id: int
+    arrival_s: int
+
+
+class VehicleRoute(BaseModel):
+    vehicle_id: int
+    stops: list[RouteVisit]
+    distance_m: int
+    duration_s: int
+    # [lat, lng] pairs to draw
+    geometry: list[tuple[float, float]]
+
+
+class OptimiseResponse(BaseModel):
+    routes: list[VehicleRoute]
+    # Stops no vehicle could reach inside its time window
+    unassigned: list[int]
+    distance_source: Literal["osrm", "straight-line"]
+    note: str | None = None
 
 
 @app.get("/health")
@@ -208,3 +261,17 @@ def rul(req: RulRequest) -> RulResponse:
     prediction = model.predict_latest(daily, maintenance)
     return RulResponse(vehicle_id=req.vehicle_id, component=req.component,
                        model_version=model.config["version"], **prediction)
+
+
+@app.post("/optimise-routes")
+def optimise_routes(req: OptimiseRequest) -> OptimiseResponse:
+    """Assigns the stops to the vehicles and orders them (OR-Tools VRP). Vehicles without stops are left out."""
+    points = [(p.lat, p.lng) for p in [*req.vehicles, *req.stops]]
+    dist, dur, source, note = routing.matrix(points)
+    routes, unassigned = routing.solve(
+        [v.model_dump() for v in req.vehicles], [s.model_dump() for s in req.stops], dist, dur,
+        return_to_start=req.return_to_start, balance=req.balance,
+        max_stops_per_vehicle=req.max_stops_per_vehicle, time_limit_s=req.time_limit_s)
+    for route in routes:
+        route["geometry"] = routing.geometry([points[n] for n in route.pop("nodes")], source)
+    return OptimiseResponse(routes=routes, unassigned=unassigned, distance_source=source, note=note)

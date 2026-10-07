@@ -10,7 +10,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /** The {@code fleet.*} blocks of application.yml that are bound as a whole. */
 @ConfigurationProperties(prefix = "fleet")
 public record FleetProperties(Twin twin, List<Rule> rules, Ml ml, Driving driving, Fuel fuel,
-                              Recommendations recommendations) {
+                              Recommendations recommendations, Routes routes, Utilisation utilisation) {
+
+    /**
+     * Route optimisation. A vehicle is left out when a part's remaining useful life is under minRulDays
+     * (or it has an urgent recommendation or an open critical alert). Among the rest, each km costs
+     * 1 + fuelWeight x (best km/l / own km/l - 1) + driverScoreWeight x (100 - driver score) / 100.
+     */
+    public record Routes(double minRulDays, double fuelWeight, double driverScoreWeight, double defaultKmPerLitre,
+                         int balance, double solverSeconds, Duration timeout, int defaultServiceMinutes, int maxStops) {
+    }
+
+    /** Utilisation = hours on trips / (days x workingHoursPerDay). */
+    public record Utilisation(double workingHoursPerDay, double underUsedBelow, double overUsedAbove) {
+    }
 
     public record Twin(Duration offlineAfter, double movingSpeedKmh, int maintenanceSummarySize) {
     }

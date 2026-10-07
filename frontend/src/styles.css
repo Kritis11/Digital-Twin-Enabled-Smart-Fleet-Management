@@ -147,3 +147,9 @@ ul.plain li { padding: 0.3rem 0; }
 .recommendation p { margin: 0.3rem 0 0; }
 .score-bar { display: inline-block; width: 90px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-right: 0.4rem; vertical-align: middle; }
 .score-bar div { height: 100%; }
+
+/* Phase 3 */
+.stop-marker { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 40%); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+.check { display: inline-flex; flex-direction: row !important; align-items: center; gap: 0.3rem; color: var(--text) !important; font-size: inherit !important; }
+button.primary, button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.panel > .actions { margin-top: 0.75rem; }

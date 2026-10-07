@@ -9,3 +9,4 @@ joblib==1.6.0
 minio==7.2.20
 python-dotenv==1.2.4
 psycopg[binary]==3.3.6
+ortools==9.15.6755

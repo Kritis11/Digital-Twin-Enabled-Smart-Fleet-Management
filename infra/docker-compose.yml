@@ -81,6 +81,42 @@ services:
       timeout: 3s
       retries: 20
 
+  # Road distances and times for route optimisation. The first start downloads OSRM_PBF_URL and
+  # preprocesses it (several minutes, about 4 GB of memory for the default region); later starts
+  # reuse the osrm-data volume. Changing OSRM_PBF_URL makes the next start prepare the new region.
+  # Until it is healthy, and for places outside the region, routes use straight-line distances.
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+    environment:
+      OSRM_PBF_URL: ${OSRM_PBF_URL:-https://download.openstreetmap.fr/extracts/asia/india/karnataka-latest.osm.pbf}
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        cd /data
+        if [ "$$(cat region.url 2>/dev/null)" != "$$OSRM_PBF_URL" ]; then
+          rm -f region.*
+          wget -O region.osm.pbf "$$OSRM_PBF_URL"
+          osrm-extract -p /opt/car.lua region.osm.pbf
+          osrm-partition region.osrm
+          osrm-customize region.osrm
+          rm region.osm.pbf
+          echo "$$OSRM_PBF_URL" > region.url
+        fi
+        exec osrm-routed --algorithm mld --max-table-size 1000 region.osrm
+    ports:
+      - "${OSRM_PORT:-5001}:5000"
+    volumes:
+      - osrm-data:/data
+    networks: [fleet-net]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5000"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30m
+
 networks:
   fleet-net:
     name: fleet-net
@@ -90,3 +126,4 @@ volumes:
   mosquitto-data:
   minio-data:
   redis-data:
+  osrm-data:

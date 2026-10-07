@@ -23,6 +23,7 @@ import { FleetService } from './fleet.service';
           }
         </a>
         <a routerLink="/drivers-fuel" routerLinkActive="active">Drivers &amp; Fuel</a>
+        <a routerLink="/routes" routerLinkActive="active">Route Planner</a>
         <div class="live" [class.on]="fleet.live()" role="status">
           {{ fleet.live() ? 'Live' : 'Reconnecting…' }}
         </div>

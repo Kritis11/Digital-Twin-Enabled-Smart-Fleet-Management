@@ -102,6 +102,21 @@ fleet:
       tyres:   { action: Replace tyres,      inspect-action: Inspect tyres,        sensor: tyreTread,     new-value: 8,   service-interval-days: 90, service-interval-km: 25000 }
       engine:  { action: Service engine,     inspect-action: Inspect engine,       sensor: engineHealth,  new-value: 100, service-interval-days: 60, service-interval-km: 20000 }
       fuel:    { inspect-action: Inspect fuel system }
+  # Route optimisation (POST /api/routes/optimise). The solver runs in the ML service.
+  routes:
+    min-rul-days: 3               # a part predicted to fail sooner than this keeps the vehicle off routes
+    fuel-weight: 0.5              # how strongly worse fuel efficiency makes a vehicle less preferred
+    driver-score-weight: 0.5      # ... and a lower driver score
+    default-km-per-litre: 2.2     # for fuel estimates when a vehicle has no recent trips
+    balance: 10                   # weight on the longest route's duration; 0 = shortest total distance, even if one vehicle does it all
+    solver-seconds: 3             # search time per request
+    timeout: 30s                  # for the call to the ML service
+    default-service-minutes: 10   # time spent at a stop unless the request says otherwise
+    max-stops: 100
+  utilisation:
+    working-hours-per-day: 10     # 100% utilisation = on trips for this long every day
+    under-used-below: 0.3
+    over-used-above: 0.85
   telemetry:
     default-buckets: 300          # points returned when ?interval= is omitted
     max-buckets: 2000
