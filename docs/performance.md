@@ -138,22 +138,24 @@ At the required load the whole stack fits in about 1 GB and uses well under half
 
 ```mermaid
 xychart-beta
-    title "Mean reading-to-database delay by fleet size (ms): before (upper) and after (lower) the fixes"
+    title "Mean reading-to-database delay by fleet size (ms)"
     x-axis [50, 100, 400, 800]
     y-axis "delay (ms)" 0 --> 240
     line [28, 41, 118, 222]
     line [23, 33, 87, 167]
 ```
 
+Upper line: before the fixes. Lower line: after.
+
 ```mermaid
 xychart-beta
-    title "Seconds between anomaly scores of the same vehicle (target: 10)"
+    title "Seconds between anomaly scores of one vehicle"
     x-axis [50, 100, 400, 800]
     y-axis "seconds" 0 --> 55
     bar [11, 13, 25, 50]
 ```
 
-Three things happen as the fleet grows.
+The target for the second chart is 10 seconds. Three things happen as the fleet grows.
 
 **1. Delay grows in step with the fleet, and ingestion keeps up.** Readings are handled one at a
 time on the MQTT subscriber thread: store the row, update the twin, feed the trip detector. The

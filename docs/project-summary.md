@@ -98,7 +98,8 @@ three phases, each ending in a working, tested system.
 | Remaining useful life, mean absolute error (leave-one-vehicle-out) | Brakes 2.1 days, battery 1.8, tyres 3.4, engine 2.3; 83–95% of predictions within ±7 days |
 | Driver score | Separates the simulator's driver profiles: calm 97, normal 86–87, aggressive 45–46 |
 | Route optimisation, 10 stops, 5 vehicles on offer | 3 vehicles excluded with reasons; 2 routes of 5 stops, 142 km by road in total |
-| Automated tests | 34 backend, 23 ML service, simulator self-check; none needs a running database |
+| Automated tests | 50 backend (35 unit, 15 integration against real services), 32 ML service, 14 end-to-end in a browser, simulator self-check; 93% and 94% line coverage |
+| Load | 100 vehicles a second: every reading stored within about 33 ms; ingestion held to 800 a second ([performance.md](performance.md)) |
 
 Figures are from simulated data; see the caveats in [model_report.md](model_report.md).
 

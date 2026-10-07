@@ -454,6 +454,25 @@ Formatting and linting are checked in CI. To check or fix locally:
 
 Every setting and its default is listed in [docs/configuration.md](docs/configuration.md).
 
+## Documentation
+
+| Document | For |
+|---|---|
+| [docs/user-guide.md](docs/user-guide.md) | Using the dashboard, by role |
+| [docs/deployment.md](docs/deployment.md) | Running it on a server: DNS, HTTPS, backups, restore, updates |
+| [docs/configuration.md](docs/configuration.md) | Every setting and its default |
+| [docs/architecture.md](docs/architecture.md) | Data paths and design decisions |
+| [docs/model_report.md](docs/model_report.md), [docs/driver_score.md](docs/driver_score.md) | Model results; the driver score formula |
+| [docs/performance.md](docs/performance.md) | Load and failure tests |
+| [docs/security.md](docs/security.md) | Security review and open issues |
+| [docs/project-report.md](docs/project-report.md), [docs/project-summary.md](docs/project-summary.md) | The project as a report; a short summary by objective |
+| [docs/demo-script.md](docs/demo-script.md), [docs/presentation-outline.md](docs/presentation-outline.md) | A 10-minute demo; a slide outline |
+| [docs/changelog.md](docs/changelog.md) | Bugs found and fixed in the final review |
+
+Demo helpers: `scripts/demo-reset.sh` puts the development stack into a known demo state (it
+deletes the fleet data, and asks first); `scripts/demo-fault.sh <vehicle> [fault]` makes a
+simulated vehicle develop a fault on the spot.
+
 ## Troubleshooting
 
 - **`Cannot connect to the Docker daemon`**: Docker Desktop isn't running. Start it
