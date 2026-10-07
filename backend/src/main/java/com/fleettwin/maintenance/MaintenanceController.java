@@ -2,6 +2,7 @@ package com.fleettwin.maintenance;
 
 import java.util.List;
 
+import com.fleettwin.auth.AuditService;
 import com.fleettwin.vehicle.VehicleRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class MaintenanceController {
 
     private final MaintenanceRepository repository;
     private final VehicleRepository vehicles;
+    private final AuditService audit;
 
     @GetMapping
     public List<MaintenanceRecord> list(@RequestParam(required = false) Long vehicleId) {
@@ -44,20 +46,27 @@ public class MaintenanceController {
     @ResponseStatus(HttpStatus.CREATED)
     public MaintenanceRecord create(@Valid @RequestBody MaintenanceRecord record) {
         record.setId(null);
-        return save(record);
+        return audited("CREATE", save(record));
     }
 
     @PutMapping("/{id}")
     public MaintenanceRecord update(@PathVariable Long id, @Valid @RequestBody MaintenanceRecord record) {
         get(id);
         record.setId(id);
-        return save(record);
+        return audited("UPDATE", save(record));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
-        repository.delete(get(id));
+        MaintenanceRecord record = get(id);
+        repository.delete(record);
+        audited("DELETE", record);
+    }
+
+    private MaintenanceRecord audited(String action, MaintenanceRecord record) {
+        audit.record(action, "maintenance_record", record.getId(), "vehicle " + record.getVehicleId() + ": " + record.getType());
+        return record;
     }
 
     private MaintenanceRecord save(MaintenanceRecord record) {

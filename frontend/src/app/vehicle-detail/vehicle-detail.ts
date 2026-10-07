@@ -120,6 +120,7 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
 
       <section class="panel">
         <h2>Maintenance history</h2>
+        @if (fleet.canWrite()) {
         <form class="filters" (ngSubmit)="addRecord()">
           <label>Type <input name="type" [(ngModel)]="type" required maxlength="50" placeholder="e.g. Oil change" /></label>
           <label>Performed <input name="performedAt" type="datetime-local" [(ngModel)]="performedAt" required /></label>
@@ -127,6 +128,7 @@ const GAUGE_ARC = Math.PI * 50; // length of the semicircle path below
           <label class="grow">Description <input name="description" [(ngModel)]="description" /></label>
           <button type="submit" [disabled]="saving() || !type() || !performedAt()">Add record</button>
         </form>
+        }
         @if (maintenanceError(); as message) {
           <p class="error" role="alert">{{ message }}</p>
         }

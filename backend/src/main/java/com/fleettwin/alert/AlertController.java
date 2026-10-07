@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fleettwin.auth.AuditService;
 import com.fleettwin.twin.Status;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class AlertController {
 
     private final AlertRepository repository;
     private final AlertService service;
+    private final AuditService audit;
 
     @Value("${fleet.alerts.max-results}")
     private int maxResults;
@@ -62,6 +64,8 @@ public class AlertController {
 
     @PostMapping("/{id}/acknowledge")
     public Alert acknowledge(@PathVariable long id) {
-        return service.acknowledge(id);
+        Alert alert = service.acknowledge(id);
+        audit.record("ACKNOWLEDGE", "alert", id, "vehicle " + alert.getVehicleId() + ": " + alert.getMessage());
+        return alert;
     }
 }

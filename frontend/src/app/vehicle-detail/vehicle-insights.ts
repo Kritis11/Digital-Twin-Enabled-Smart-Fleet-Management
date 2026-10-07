@@ -62,13 +62,15 @@ const SEVERITY_COLOURS = { LOW: '#8a94a0', MEDIUM: '#b7791f', HIGH: '#c0362c' };
               <span class="muted"> by {{ r.recommendedBy | date: 'd MMM' }} · {{ r.status }}</span>
               <p>{{ r.reason }}</p>
             </div>
-            <div class="actions">
-              @if (r.status === 'OPEN') {
-                <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'SCHEDULED')">Schedule</button>
-              }
-              <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DONE')">Complete</button>
-              <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DISMISSED')">Dismiss</button>
-            </div>
+            @if (canWrite()) {
+              <div class="actions">
+                @if (r.status === 'OPEN') {
+                  <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'SCHEDULED')">Schedule</button>
+                }
+                <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DONE')">Complete</button>
+                <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DISMISSED')">Dismiss</button>
+              </div>
+            }
           </div>
         }
       }
@@ -163,6 +165,7 @@ export class VehicleInsights {
   readonly twin = input.required<VehicleTwin>();
 
   private readonly fleet = inject(FleetService);
+  protected readonly canWrite = this.fleet.canWrite;
   protected readonly periods = PERIODS;
   protected readonly barMax = environment.rul.barMaxDays;
   protected readonly period = signal<Period>('7d');

@@ -68,7 +68,7 @@ import { FleetService } from '../fleet.service';
                   <td>
                     @if (alert.acknowledged) {
                       <span class="muted">Acknowledged</span>
-                    } @else {
+                    } @else if (fleet.canWrite()) {
                       <button type="button" [disabled]="busy().has(alert.id)" (click)="acknowledge(alert.id)">Acknowledge</button>
                     }
                   </td>

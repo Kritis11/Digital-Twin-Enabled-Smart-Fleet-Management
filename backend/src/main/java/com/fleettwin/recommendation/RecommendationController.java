@@ -4,6 +4,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import com.fleettwin.auth.AuditService;
 import com.fleettwin.recommendation.Recommendation.Priority;
 import com.fleettwin.recommendation.Recommendation.State;
 import jakarta.validation.constraints.NotNull;
@@ -27,6 +28,7 @@ public class RecommendationController {
 
     private final RecommendationRepository repository;
     private final RecommendationService service;
+    private final AuditService audit;
 
     /** Most urgent first, then by recommended-by date. Every filter is optional. */
     @GetMapping
@@ -45,7 +47,15 @@ public class RecommendationController {
     /** {"status": "SCHEDULED" | "DONE" | "DISMISSED" | "OPEN"}. DONE also records the maintenance and resets the part. */
     @PatchMapping("/{id}")
     public Recommendation update(@PathVariable long id, @jakarta.validation.Valid @RequestBody StatusChange change) {
-        return service.transition(id, change.status());
+        Recommendation r = service.transition(id, change.status());
+        String action = switch (r.getStatus()) {
+            case DONE -> "COMPLETE";
+            case DISMISSED -> "DISMISS";
+            case SCHEDULED -> "SCHEDULE";
+            case OPEN -> "REOPEN";
+        };
+        audit.record(action, "recommendation", id, "vehicle " + r.getVehicleId() + ": " + r.getAction());
+        return r;
     }
 
     /** Runs the rules now instead of waiting for the schedule. */

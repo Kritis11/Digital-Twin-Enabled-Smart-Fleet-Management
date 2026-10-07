@@ -1,8 +1,9 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Client } from '@stomp/stompjs';
 import { Observable, forkJoin, tap } from 'rxjs';
 import { environment } from '../environments/environment';
+import { AuthService } from './auth';
 
 export type Status = 'OK' | 'WARNING' | 'CRITICAL';
 export type Level = 'ok' | 'warning' | 'critical';
@@ -196,6 +197,9 @@ export function ago(iso: string | undefined, now: number): string {
 export class FleetService {
   private readonly http = inject(HttpClient);
   private readonly api = environment.apiBaseUrl;
+  private readonly auth = inject(AuthService);
+  /** False for viewers: pages hide their buttons and forms. */
+  readonly canWrite = this.auth.canWrite;
 
   readonly twins = signal<VehicleTwin[]>([]);
   /** Newest first, open and acknowledged (the backend caps the list). */
@@ -215,14 +219,15 @@ export class FleetService {
 
   constructor() {
     setInterval(() => this.now.set(Date.now()), 1000);
-    this.load();
-    this.loadRecommendations();
-    setInterval(() => this.loadRecommendations(), environment.insightsRefreshMs);
 
     let connectedBefore = false;
     const client = new Client({
       brokerURL: environment.wsUrl,
       reconnectDelay: environment.wsReconnectMs,
+      // The server accepts the WebSocket only with a valid access token on the CONNECT frame.
+      beforeConnect: () => {
+        client.connectHeaders = { Authorization: `Bearer ${this.auth.session()?.accessToken}` };
+      },
       onConnect: () => {
         // Anything pushed while we were disconnected is gone, so catch up over REST.
         if (connectedBefore) this.load();
@@ -233,7 +238,25 @@ export class FleetService {
       },
       onWebSocketClose: () => this.live.set(false),
     });
-    client.activate();
+
+    // Data flows only while someone is logged in; logging out stops it and forgets what was loaded.
+    let timer: ReturnType<typeof setInterval> | undefined;
+    effect(() => {
+      if (this.auth.loggedIn()) {
+        this.load();
+        this.loadRecommendations();
+        timer = setInterval(() => this.loadRecommendations(), environment.insightsRefreshMs);
+        client.activate();
+      } else {
+        clearInterval(timer);
+        client.deactivate();
+        connectedBefore = false;
+        this.twins.set([]);
+        this.alerts.set([]);
+        this.recommendations.set([]);
+        this.error.set(null);
+      }
+    });
   }
 
   load(): void {
@@ -248,7 +271,7 @@ export class FleetService {
         this.loading.set(false);
       },
       error: () => {
-        this.error.set(`Cannot reach the backend at ${this.api}.`);
+        if (this.auth.loggedIn()) this.error.set(`Cannot reach the backend${this.api ? ' at ' + this.api : ''}.`);
         this.loading.set(false);
       },
     });

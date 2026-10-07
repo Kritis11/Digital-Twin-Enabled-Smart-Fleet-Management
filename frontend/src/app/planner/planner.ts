@@ -10,7 +10,9 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
   template: `
     <div class="panel-head">
       <h1>Maintenance Planner</h1>
-      <button type="button" [disabled]="busy()" (click)="recompute()">Recompute now</button>
+      @if (fleet.canWrite()) {
+        <button type="button" [disabled]="busy()" (click)="recompute()">Recompute now</button>
+      }
     </div>
 
     <section class="panel filters" aria-label="Filters">
@@ -66,10 +68,10 @@ import { FleetService, RecommendationStatus } from '../fleet.service';
                   <td>{{ r.reason }}</td>
                   <td>{{ r.status }}</td>
                   <td class="actions">
-                    @if (r.status === 'OPEN') {
+                    @if (fleet.canWrite() && r.status === 'OPEN') {
                       <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'SCHEDULED')">Schedule</button>
                     }
-                    @if (r.status === 'OPEN' || r.status === 'SCHEDULED') {
+                    @if (fleet.canWrite() && (r.status === 'OPEN' || r.status === 'SCHEDULED')) {
                       <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DONE')">Complete</button>
                       <button type="button" [disabled]="busy()" (click)="setStatus(r.id, 'DISMISSED')">Dismiss</button>
                     }
