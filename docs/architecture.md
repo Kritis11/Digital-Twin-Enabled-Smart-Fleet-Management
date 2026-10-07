@@ -11,7 +11,21 @@ simulator ──MQTT──▶ Mosquitto ──fleet/+/telemetry──▶ backend
                                                         └─ every 10 s per online vehicle: last 2 min of telemetry
                                                            ──▶ ml-service /anomaly, /health-score ──▶ twin, ML alerts
 
-ml-service ◀── newest model ── MinIO ◀── training/train.py ◀── training/export_data.py ◀── TimescaleDB
+                                                        ├─ per message: driving analyzer ──▶ driving_events, trips
+                                                        │  (driver score and fuel use are computed from these in SQL)
+                                                        │
+                                                        ├─ every 60 s: ml-service /rul per component ──▶ twin
+                                                        │  every 60 s: driver score and km/l (SQL) ──▶ twin
+                                                        │
+                                                        └─ every 15 min: recommendation rules over RUL, statuses,
+                                                           alerts, anomaly history, last service
+                                                           ──▶ maintenance_recommendations, open count on twin
+
+recommendation marked DONE ──▶ maintenance_record + wear reset in twin ──MQTT fleet/{id}/maintenance──▶ simulator
+simulator --fast-forward ──▶ TimescaleDB directly (telemetry + maintenance_records), then POST /api/admin/reanalyse
+
+ml-service ◀── newest models ── MinIO ◀── training/train.py, train_rul.py ◀── TimescaleDB
+ml-service /rul ── reads the vehicle's daily wear and usage ── TimescaleDB
 frontend ── REST (initial load, history) + STOMP (/topic/twins, /topic/alerts) ── backend
 ```
 
@@ -46,14 +60,31 @@ frontend ── REST (initial load, history) + STOMP (/topic/twins, /topic/alert
   the features the model sees in production are computed exactly as in training.
 - **Model versions are UTC timestamps** under `models/anomaly/` in MinIO; the newest wins. Nothing
   is ever overwritten, so rolling back means deleting the newest version and reloading.
+- **Driving events, trips and fuel figures are derived data.** They are computed from telemetry by
+  one analyzer, live and in `POST /api/admin/reanalyse`, so they can always be rebuilt. Thresholds
+  and score weights are config; the formula is in [driver_score.md](driver_score.md).
+- **Fuel that vanishes while parked is not counted as trip fuel**, so a theft or leak shows up as a
+  `FUEL_DROP` event and does not also drag down that vehicle's efficiency.
+- **`/rul` reads history itself.** RUL features cover the part's whole time in service, far more
+  than the backend could reasonably send, so the ML service queries TimescaleDB (cached briefly).
+- **RUL bounds are conformalised quantiles**: XGBoost's 10% and 90% quantiles, widened by a
+  per-component margin so that 80% of held-out values fall inside.
+- **Recommendations are rules, not a model.** `RecommendationEngine` is a pure function of its
+  inputs; every rule that fires adds a sentence to the reason and the highest priority wins. A part
+  is recommended for replacement only when its wear prediction fired, otherwise for inspection.
+  There is at most one active recommendation per vehicle and component, updated in place.
+- **Driver score, fuel efficiency and recommendations do not need the ML service**; with it down,
+  recommendations simply lack RUL evidence.
 - **Credentials live only in the root `.env`**. Compose, the backend, the ML service and the
   simulator all read it. The Mosquitto password file is generated from it at container start.
 - **Security permits everything** for now; CORS and the WebSocket allow only `http://localhost:4200`.
 
 ## Not built yet
 
-- Remaining useful life (`/rul` is a placeholder) and the `components` table (unused).
-- Simulator faults for brakes and fuel; those tiles only change through gradual wear and fuel burn.
+- The `components` table is still unused.
+- Named drivers: scores are per vehicle, which assumes one driver per vehicle.
+- Real speed limits and road data: speeding uses one fleet-wide limit, cornering comes from
+  heading change between readings.
 - Authentication and per-vehicle MQTT ACLs.
 - TimescaleDB compression and retention policies.
 - Running more than one backend instance (see the twin locking note above).
